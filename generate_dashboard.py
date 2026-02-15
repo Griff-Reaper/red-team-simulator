@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-generate_dashboard.py &#8212; Red Team Attack Simulator Dashboard Generator
+generate_dashboard.py — Red Team Attack Simulator Dashboard Generator
 
 Reads results/attack_log.json and generates a fully interactive HTML dashboard
 with animated charts, scroll-triggered reveals, and test session history.
@@ -21,6 +21,7 @@ import argparse
 from datetime import datetime, timezone
 from collections import defaultdict
 from html import escape
+from chain_dashboard import extract_chain_results, compute_chain_stats, gen_chain_section, CHAIN_CSS
 
 
 # ── Data Processing ───────────────────────────────────────────────────────────
@@ -448,6 +449,12 @@ def generate_html(stats: dict, results: list[dict]) -> str:
     target_boxes = gen_target_boxes(stats["by_target"])
     finding_cards = gen_finding_cards(stats["findings"])
     table_data = gen_table_data(results)
+    
+    # Multi-turn chain processing
+    chain_results = extract_chain_results(results)
+    chain_stats = compute_chain_stats(chain_results)
+    chain_section = gen_chain_section(chain_stats, chain_results)
+    chain_css = CHAIN_CSS if chain_stats.get("has_chains") else ""
     
     return f'''<!DOCTYPE html>
 <html lang="en">
@@ -1217,6 +1224,8 @@ body::before {{
 ::-webkit-scrollbar-track {{ background: var(--bg-primary); }}
 ::-webkit-scrollbar-thumb {{ background: var(--border); }}
 ::-webkit-scrollbar-thumb:hover {{ background: var(--text-muted); }}
+
+{chain_css}
 </style>
 </head>
 <body>
@@ -1301,6 +1310,9 @@ body::before {{
       </div>
     </div>
   </div>
+
+  <!-- MULTI-TURN ESCALATION CHAINS -->
+{chain_section}
 
   <!-- SUCCESSFUL ATTACKS / FINDINGS -->
   <div class="section-title animate delay-5">SUCCESSFUL ATTACKS &#8212; DETAILED FINDINGS</div>

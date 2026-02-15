@@ -965,6 +965,7 @@ body::before {{
 }}
 
 .finding-header {{
+  padding-right: 140px;
   display: flex;
   align-items: center;
   gap: 12px;

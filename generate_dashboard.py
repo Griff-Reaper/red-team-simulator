@@ -1501,7 +1501,7 @@ def main():
     html = generate_html(stats, results)
     
     os.makedirs(args.output_dir, exist_ok=True)
-    output_path = os.path.join(args.output_dir, "dashboard.html")
+    output_path = os.path.join(args.output_dir, "index.html")
     
     with open(output_path, "w") as f:
         f.write(html)

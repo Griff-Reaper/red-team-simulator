@@ -1,0 +1,18 @@
+# API keys
+.env
+
+# Personal notes
+reminder.txt
+
+# Logs and results (regenerated locally)
+results/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Virtual environment
+venv/
+
+# Static dashboard
+dashboard.html

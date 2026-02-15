@@ -1507,7 +1507,7 @@ def main():
     os.makedirs(args.output_dir, exist_ok=True)
     output_path = os.path.join(args.output_dir, "index.html")
     
-    with open(output_path, "w") as f:
+    with open(output_path, "w", encoding="utf-8") as f:
         f.write(html)
     
     size_kb = os.path.getsize(output_path) / 1024

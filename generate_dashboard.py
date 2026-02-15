@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-generate_dashboard.py — Red Team Attack Simulator Dashboard Generator
+generate_dashboard.py &#8212; Red Team Attack Simulator Dashboard Generator
 
 Reads results/attack_log.json and generates a fully interactive HTML dashboard
 with animated charts, scroll-triggered reveals, and test session history.
@@ -162,7 +162,7 @@ TARGET_CONFIG = {
         "name": "AZURE OPENAI",
         "subtitle": "GPT-4o + Content Filter",
         "css_class": "azure",
-        "defense": "Defense Strategy: Pre-model content filter acts as a firewall. Catches attacks before they reach the model. Blunt but effective — blocks even benign-looking attack prompts via jailbreak detection.",
+        "defense": "Defense Strategy: Pre-model content filter acts as a firewall. Catches attacks before they reach the model. Blunt but effective &#8212; blocks even benign-looking attack prompts via jailbreak detection.",
     },
     "claude": {
         "name": "CLAUDE",
@@ -257,17 +257,17 @@ def gen_key_insight(by_severity: dict) -> str:
     if crit_hits == 0 and high_hits == 0:
         return ('Critical and High severity attacks achieved '
                 '<strong style="color: var(--green);">0% success rate</strong> '
-                '— the most dangerous attack vectors are fully defended. '
+                '&#8212; the most dangerous attack vectors are fully defended. '
                 'Vulnerabilities exist only in Medium and Low severity techniques '
                 'involving indirect information leakage, output format manipulation, '
                 'and resource consumption.')
     elif crit_hits > 0:
         return (f'<strong style="color: var(--red);">{crit_hits} CRITICAL severity attack(s) succeeded</strong> '
-                '— this indicates a serious vulnerability that could allow attackers to fully compromise '
+                '&#8212; this indicates a serious vulnerability that could allow attackers to fully compromise '
                 'the model\'s safety boundaries. Immediate remediation recommended.')
     else:
         return (f'<strong style="color: var(--orange);">{high_hits} HIGH severity attack(s) succeeded</strong> '
-                '— significant vulnerabilities detected that could lead to meaningful safety bypasses. '
+                '&#8212; significant vulnerabilities detected that could lead to meaningful safety bypasses. '
                 'Review and harden defense layers for these attack vectors.')
 
 
@@ -454,7 +454,7 @@ def generate_html(stats: dict, results: list[dict]) -> str:
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>RED TEAM — Attack Simulator Report</title>
+<title>RED TEAM &#8212; Attack Simulator Report</title>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root {{
@@ -1299,7 +1299,7 @@ body::before {{
   </div>
 
   <!-- SUCCESSFUL ATTACKS / FINDINGS -->
-  <div class="section-title animate delay-5">SUCCESSFUL ATTACKS — DETAILED FINDINGS</div>
+  <div class="section-title animate delay-5">SUCCESSFUL ATTACKS &#8212; DETAILED FINDINGS</div>
   <div class="findings animate delay-5">
 {finding_cards}
   </div>
@@ -1326,7 +1326,7 @@ body::before {{
 
   <!-- FOOTER -->
   <footer class="footer">
-    <div class="footer-text">RED TEAM ENGAGEMENT COMPLETE — ALL FINDINGS DOCUMENTED</div>
+    <div class="footer-text">RED TEAM ENGAGEMENT COMPLETE &#8212; ALL FINDINGS DOCUMENTED</div>
     <div class="footer-brand">BUILT BY JACE // 2026</div>
   </footer>
 

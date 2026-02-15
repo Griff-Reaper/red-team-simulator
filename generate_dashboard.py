@@ -162,7 +162,7 @@ TARGET_CONFIG = {
         "name": "AZURE OPENAI",
         "subtitle": "GPT-4o + Content Filter",
         "css_class": "azure",
-        "defense": "Defense Strategy: Pre-model content filter acts as a firewall. Catches attacks before they reach the model. Blunt but effective &#8212; blocks even benign-looking attack prompts via jailbreak detection.",
+        "defense": "Defense Strategy: Pre-model content filter acts as a firewall. Catches attacks before they reach the model. Blunt but effective - blocks even benign-looking attack prompts via jailbreak detection.",
     },
     "claude": {
         "name": "CLAUDE",

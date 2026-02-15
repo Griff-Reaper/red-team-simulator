@@ -13,6 +13,3 @@ __pycache__/
 
 # Virtual environment
 venv/
-
-# Static dashboard
-dashboard.html

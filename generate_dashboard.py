@@ -1223,7 +1223,7 @@ body::before {{
   <header class="header animate delay-1">
     <div class="badge">CLASSIFIED // AUTHORIZED RED TEAM ENGAGEMENT</div>
     <h1>RED TEAM</h1>
-    <div class="header-sub">LLM ATTACK SIMULATOR v1.0 — ASSESSMENT REPORT</div>
+    <div class="header-sub">LLM ATTACK SIMULATOR v1.0 &mdash; ASSESSMENT REPORT</div>
     <div class="header-meta">GENERATED {now} &nbsp;|&nbsp; OPERATOR: JACE &nbsp;|&nbsp; FRAMEWORK: MITRE ATLAS</div>
     <div class="session-banner">
       <div class="session-item">TEST SESSIONS: <strong>{stats['num_sessions']}</strong></div>

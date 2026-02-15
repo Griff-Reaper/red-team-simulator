@@ -939,7 +939,7 @@ body::before {{
 .finding-card::before {{
   content: 'HIT';
   position: absolute;
-  top: 12px; right: 16px;
+  top: 12px; right: 120px;
   font-family: 'Orbitron', sans-serif;
   font-size: 11px;
   font-weight: 700;

@@ -1,0 +1,19 @@
+# Red Team Attack Simulator - Dependencies
+
+# Core AI/ML Libraries
+openai>=1.12.0              # Azure OpenAI + OpenAI API
+anthropic>=0.18.0           # Claude API
+
+# Environment & Configuration
+python-dotenv>=1.0.0        # .env file support
+
+# Optional: Advanced Features
+langchain>=0.1.0            # Multi-turn chain support
+langchain-anthropic>=0.1.0  # Claude integration for LangChain
+langchain-openai>=0.0.5     # OpenAI integration for LangChain
+langgraph>=0.0.20           # Graph-based chains
+
+# Optional: Azure AI Search (for RAG features)
+azure-search-documents>=11.4.0
+
+# Note: Python 3.10+ recommended

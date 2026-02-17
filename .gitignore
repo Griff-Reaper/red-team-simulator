@@ -4,8 +4,11 @@
 # Personal notes
 reminder.txt
 
-# Logs and results (regenerated locally)
-results/
+# Allow specific result files to be committed
+results/*
+!results/attack_log.json
+!results/automated_run_summary.json
+!results/.gitkeep
 
 # Python cache
 __pycache__/

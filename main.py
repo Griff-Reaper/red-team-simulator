@@ -12,6 +12,8 @@ from target_tester import TargetTester
 from results_logger import ResultsLogger
 from multi_turn_chains import get_all_chains, get_chain, EscalationStrategy
 from multi_turn_tester import MultiTurnTester
+from apt_simulator import APTSimulator
+from apt_personas import get_all_personas
 
 
 def print_banner():
@@ -53,6 +55,9 @@ def print_menu():
     print("  10. Run Single Escalation Chain")
     print("  11. Run All Chains Against Target")
     print("  12. Browse Escalation Chains")
+    print("  ─── APT PERSONA MODE ───────────────")
+    print("  13. APT Persona Mode")
+    print("  14. Browse APT Profiles")
     print("  ─────────────────────────────")
     print("  0.  Exit")
     print("=" * 50)
@@ -411,6 +416,7 @@ def main():
     tester = TargetTester()
     logger = ResultsLogger()
     mt_tester = MultiTurnTester()
+    apt_sim = APTSimulator()
     print("[✓] Simulator ready.\n")
 
     while True:
@@ -443,12 +449,66 @@ def main():
             option_all_chains(mt_tester)
         elif choice == "12":
             option_browse_chains()
+        elif choice == "13":
+            option_apt_persona_mode(apt_sim)
+        elif choice == "14":
+            option_browse_apt_profiles()
         elif choice == "0":
             print("\n[*] Shutting down simulator. Stay dangerous. 🔥")
             sys.exit(0)
         else:
             print("  Invalid option. Try again.")
 
+def option_apt_persona_mode(apt_sim):
+    from apt_personas import get_all_personas
+    personas = get_all_personas()
+    print("\n" + "=" * 60)
+    print("  APT PERSONA MODE")
+    print("=" * 60)
+    print("\n  Select Threat Actor:")
+    persona_list = list(personas.values())
+    for i, p in enumerate(persona_list, 1):
+        print(f"  {i}. {p.flag}  {p.codename} ({p.id}) — {p.nation_state}")
+        print(f"     \"{p.motivation[:70]}...\"")
+    choice = input("\n  > ").strip()
+    try:
+        persona = persona_list[int(choice) - 1]
+    except (ValueError, IndexError):
+        print("  Invalid choice.")
+        return
+    print(f"\n  [{persona.codename}] Select Target:")
+    print("  1. Azure OpenAI (GPT-4o)")
+    print("  2. Claude (Sonnet)")
+    target_choice = input("\n  > ").strip()
+    target = "azure-openai" if target_choice == "1" else "claude"
+    technique_ids = persona.preferred_techniques
+    confirm = input(f"\n  Launch {persona.codename} simulation against {target}? (y/n) > ").strip().lower()
+    if confirm != "y":
+        print("  Aborted.")
+        return
+    result = apt_sim.run_simulation(apt_id=persona.id, target=target, technique_ids=technique_ids, verbose=True)
+    print(f"\n  [✓] Done. Hits: {result['hits']}/{result['techniques_run']} | AAR: {result['aar_path']}")
+
+
+def option_browse_apt_profiles():
+    from apt_personas import get_all_personas
+    personas = get_all_personas()
+    print("\n" + "=" * 65)
+    print("  APT THREAT ACTOR PROFILES")
+    print("=" * 65)
+    for p in personas.values():
+        print(f"\n  {'─'*60}")
+        print(f"  {p.flag}  {p.codename} ({p.id})")
+        print(f"  {'─'*60}")
+        print(f"  Nation State : {p.nation_state}")
+        print(f"  Active Since : {p.active_since}")
+        print(f"  Motivation   : {p.motivation}")
+        print(f"  Techniques   : {', '.join(p.preferred_techniques)}")
+        print(f"  Tools        : {', '.join(p.tools_and_malware[:3])}")
+        print(f"  Campaigns    :")
+        for c in p.known_campaigns:
+            print(f"    • {c}")
+        print(f"  Philosophy   : \"{p.operational_philosophy[:120]}\"")
 
 if __name__ == "__main__":
     main()

@@ -221,7 +221,8 @@ Did the attack succeed? Respond with ONLY the JSON object."""
         if target not in self.SUPPORTED_TARGETS:
             raise ValueError(f"Unknown target: {target}. Supported: {self.SUPPORTED_TARGETS}")
 
-        print(f"\n[>] Firing {attack['technique_id']} at {target}...")
+        print(f"\n┌─ [{attack['technique_id']}] {attack['technique_name']} → {target}")
+        print(f"│  severity: {attack.get('severity', 'unknown').upper()}")
 
         # Send attack to target
         if target == "azure-openai":
@@ -233,7 +234,6 @@ Did the attack succeed? Respond with ONLY the JSON object."""
         elif target == "firewall":
             response = self._send_to_firewall(attack["generated_prompt"])
 
-        print(f"[<] Response ({len(response)} chars): {response[:150]}...")
 
         # Judge the response
         if auto_judge:
@@ -241,9 +241,15 @@ Did the attack succeed? Respond with ONLY the JSON object."""
             success = verdict["success"]
             notes = f"Confidence: {verdict['confidence']} | {verdict['reasoning']}"
         else:
+            verdict = {}
             success = False
             notes = "Manual review required."
 
+        result_icon = "⚡ SUCCEEDED" if success else "✓ BLOCKED"
+        print(f"│  result:   {result_icon}")
+        print(f"│  response: {response[:120]}...")
+        print(f"└─ confidence: {verdict.get('confidence', 0) if auto_judge else 'N/A'} | {verdict.get('reasoning', '')[:80] if auto_judge else 'manual review'}")
+        
         # Log it
         entry = self.logger.log_result(
             attack=attack,

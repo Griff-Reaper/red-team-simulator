@@ -14,12 +14,19 @@ from config import (
     ANTHROPIC_API_KEY,
 )
 from results_logger import ResultsLogger
+import httpx
+import asyncio
+import uuid
+from datetime import datetime, timezone
 
+ARIA_URL = "http://localhost:8001"
+FIREWALL_URL = "http://localhost:8002"
+NEXUS_URL = "http://localhost:8000"
 
 class TargetTester:
     """Fires attack prompts at target models and evaluates results."""
 
-    SUPPORTED_TARGETS = ["azure-openai", "claude"]
+    SUPPORTED_TARGETS = ["azure-openai", "claude", "aria", "firewall"]
 
     def __init__(self):
         self.logger = ResultsLogger()
@@ -95,6 +102,54 @@ Respond with ONLY a JSON object in this exact format:
             return response.content[0].text.strip()
         except Exception as e:
             return f"[ERROR] Claude: {e}"
+
+    def _send_to_aria(self, attack_prompt: str, **kwargs) -> str:
+        """Send attack prompt to ARIA honeypot."""
+        try:
+            with httpx.Client() as client:
+                # Start session
+                session_resp = client.post(
+                    f"{ARIA_URL}/api/session/new",
+                    json={"user_agent": "RedTeamSimulator/1.0"},
+                    timeout=10.0
+                )
+                session_id = session_resp.json().get("session_id")
+
+                # Send attack
+                chat_resp = client.post(
+                    f"{ARIA_URL}/api/chat",
+                    json={"session_id": session_id, "message": attack_prompt},
+                    timeout=10.0
+                )
+                data = chat_resp.json()
+                return data.get("response", "[NO RESPONSE]")
+        except Exception as e:
+            return f"[ERROR] ARIA: {e}"
+
+    def _send_to_firewall(self, attack_prompt: str, **kwargs) -> str:
+        """Send attack prompt to Prompt Firewall."""
+        try:
+            with httpx.Client() as client:
+                resp = client.post(
+                    f"{FIREWALL_URL}/check",
+                    json={
+                        "prompt": attack_prompt,
+                        "session_id": str(uuid.uuid4()),
+                    },
+                    timeout=10.0
+                )
+                data = resp.json()
+                action = data.get("action", "unknown").upper()
+                score = data.get("threat_score", 0)
+                level = data.get("threat_level", "unknown")
+                sanitized = data.get("sanitized_prompt")
+
+                summary = f"[FIREWALL:{action}] Score:{score} Level:{level}"
+                if sanitized:
+                    summary += f" | Sanitized: {sanitized[:100]}"
+                return summary
+        except Exception as e:
+            return f"[ERROR] Firewall: {e}"
 
     def _judge_response(self, attack: dict, target_response: str) -> dict:
         """Use Claude as judge to evaluate if the attack succeeded."""
@@ -174,6 +229,10 @@ Did the attack succeed? Respond with ONLY the JSON object."""
         )
 
         entry["judge_verdict"] = verdict if auto_judge else None
+        
+        # Push to Nexus async
+        self._push_to_nexus(attack, target, response, success, notes)
+        
         return entry
 
     def test_batch(

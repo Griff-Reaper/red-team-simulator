@@ -68,7 +68,9 @@ def select_target() -> list:
     print("\n  Select Target(s):")
     print("  1. Azure OpenAI (GPT-4o)")
     print("  2. Claude (Sonnet)")
-    print("  3. Both")
+    print("  3. ARIA Honeypot")
+    print("  4. Prompt Firewall")
+    print("  5. All")
 
     choice = input("\n  > ").strip()
     if choice == "1":
@@ -76,10 +78,14 @@ def select_target() -> list:
     elif choice == "2":
         return ["claude"]
     elif choice == "3":
-        return ["azure-openai", "claude"]
+        return ["aria"]
+    elif choice == "4":
+        return ["firewall"]
+    elif choice == "5":
+        return ["azure-openai", "claude", "aria", "firewall"]
     else:
-        print("  Invalid choice, defaulting to both.")
-        return ["azure-openai", "claude"]
+        print("  Invalid choice, defaulting to all.")
+        return ["azure-openai", "claude", "aria", "firewall"]
 
 
 def select_single_target() -> str:
@@ -87,12 +93,18 @@ def select_single_target() -> str:
     print("\n  Select Target:")
     print("  1. Azure OpenAI (GPT-4o)")
     print("  2. Claude (Sonnet)")
+    print("  3. ARIA Honeypot")
+    print("  4. Prompt Firewall")
 
     choice = input("\n  > ").strip()
     if choice == "1":
         return "azure-openai"
     elif choice == "2":
         return "claude"
+    elif choice == "3":
+        return "aria"
+    elif choice == "4":
+        return "firewall"
     else:
         print("  Invalid choice, defaulting to Claude.")
         return "claude"

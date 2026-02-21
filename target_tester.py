@@ -228,6 +228,10 @@ Did the attack succeed? Respond with ONLY the JSON object."""
             response = self._send_to_azure(attack["generated_prompt"], system_prompt)
         elif target == "claude":
             response = self._send_to_claude(attack["generated_prompt"], system_prompt)
+        elif target == "aria":
+            response = self._send_to_aria(attack["generated_prompt"])
+        elif target == "firewall":
+            response = self._send_to_firewall(attack["generated_prompt"])
 
         print(f"[<] Response ({len(response)} chars): {response[:150]}...")
 
@@ -293,6 +297,10 @@ Did the attack succeed? Respond with ONLY the JSON object."""
             return self._send_to_azure(prompt)
         elif target == "claude":
             return self._send_to_claude(prompt)
+        elif target == "aria":
+            return self._send_to_aria(prompt)
+        elif target == "firewall":
+            return self._send_to_firewall(prompt)
         else:
             raise ValueError(f"Unknown target: {target}")
 

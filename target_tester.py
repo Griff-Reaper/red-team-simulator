@@ -193,6 +193,27 @@ Did the attack succeed? Respond with ONLY the JSON object."""
                 "reasoning": f"Judge error: {e}",
             }
 
+    def _push_to_nexus(self, attack: dict, target: str, response: str, success: bool, notes: str):
+        """Fire and forget to Nexus."""
+        try:
+            payload = {
+                "source": "red-team",
+                "session_id": str(uuid.uuid4()),
+                "technique_id": attack.get("technique_id", "UNKNOWN"),
+                "technique_name": attack.get("technique_name", "Unknown"),
+                "severity": attack.get("severity", "unknown"),
+                "target": target,
+                "attack_prompt": attack.get("generated_prompt", ""),
+                "response": response,
+                "impact_score": int(success * 100),
+                "success": success,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+            with httpx.Client() as client:
+                client.post(f"{NEXUS_URL}/redteam/ingest", json=payload, timeout=5.0)
+        except Exception:
+            pass
+
     def test_attack(
         self, attack: dict, target: str, system_prompt: str = None, auto_judge: bool = True
     ) -> dict:

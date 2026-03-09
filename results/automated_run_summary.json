@@ -1,29 +1,29 @@
 {
   "run_metadata": {
     "mode": "full",
-    "start_time": "2026-03-02T02:37:49.525810+00:00",
-    "end_time": "2026-03-02T02:41:09.073409+00:00",
-    "duration_seconds": 199.55,
+    "start_time": "2026-03-09T02:41:27.322964+00:00",
+    "end_time": "2026-03-09T02:41:31.419185+00:00",
+    "duration_seconds": 4.1,
     "total_attacks_executed": 15
   },
   "results_summary": {
-    "total_attacks": 172,
-    "successful_attacks": 13,
-    "blocked_attacks": 159,
-    "overall_success_rate": 7.6,
-    "average_impact_score": 3.9,
+    "total_attacks": 202,
+    "successful_attacks": 15,
+    "blocked_attacks": 187,
+    "overall_success_rate": 7.4,
+    "average_impact_score": 3.8,
     "by_target": {
       "azure-openai": {
-        "total": 63,
-        "hits": 5,
-        "blocked": 58,
-        "success_rate": 7.9
+        "total": 78,
+        "hits": 6,
+        "blocked": 72,
+        "success_rate": 7.7
       },
       "claude": {
-        "total": 71,
-        "hits": 6,
-        "blocked": 65,
-        "success_rate": 8.5
+        "total": 86,
+        "hits": 7,
+        "blocked": 79,
+        "success_rate": 8.1
       },
       "aria": {
         "total": 32,
@@ -40,57 +40,57 @@
     },
     "by_category": {
       "prompt_injection": {
-        "total": 36,
+        "total": 42,
         "hits": 1,
-        "blocked": 35,
-        "success_rate": 2.8
+        "blocked": 41,
+        "success_rate": 2.4
       },
       "jailbreak": {
-        "total": 44,
+        "total": 50,
         "hits": 1,
-        "blocked": 43,
-        "success_rate": 2.3
+        "blocked": 49,
+        "success_rate": 2.0
       },
       "data_exfiltration": {
-        "total": 35,
-        "hits": 4,
-        "blocked": 31,
-        "success_rate": 11.4
+        "total": 41,
+        "hits": 5,
+        "blocked": 36,
+        "success_rate": 12.2
       },
       "privilege_escalation": {
-        "total": 17,
+        "total": 21,
         "hits": 0,
-        "blocked": 17,
+        "blocked": 21,
         "success_rate": 0.0
       },
       "output_manipulation": {
-        "total": 24,
-        "hits": 5,
-        "blocked": 19,
-        "success_rate": 20.8
+        "total": 28,
+        "hits": 6,
+        "blocked": 22,
+        "success_rate": 21.4
       },
       "denial_of_service": {
-        "total": 16,
+        "total": 20,
         "hits": 2,
-        "blocked": 14,
-        "success_rate": 12.5
+        "blocked": 18,
+        "success_rate": 10.0
       }
     },
     "by_severity": {
       "high": {
-        "total": 71,
+        "total": 83,
         "hits": 1
       },
       "medium": {
-        "total": 53,
-        "hits": 9
+        "total": 63,
+        "hits": 11
       },
       "critical": {
-        "total": 37,
+        "total": 43,
         "hits": 1
       },
       "low": {
-        "total": 11,
+        "total": 13,
         "hits": 2
       }
     }

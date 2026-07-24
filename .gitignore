@@ -6,7 +6,7 @@ reminder.txt
 
 # Allow specific result files to be committed
 results/*
-!results/attack_log.json
+!results/attack_log.jsonl
 !results/automated_run_summary.json
 !results/.gitkeep
 

@@ -45,7 +45,11 @@ MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))
 REQUEST_TIMEOUT = float(os.getenv("REQUEST_TIMEOUT", "60"))  # per-request seconds
 DEFAULT_TEMPERATURE = float(os.getenv("DEFAULT_TEMPERATURE", "0.9"))  # high creativity
 RESULTS_DIR = os.getenv("RESULTS_DIR", "results")
-LOG_FILE = os.path.join(RESULTS_DIR, "attack_log.json")
+# Result log is JSON Lines (one record per line): git-friendly and merge=union
+# safe, so concurrent local + CI appends never conflict. LEGACY_LOG_FILE is read
+# once for one-time migration from the old JSON-array format.
+LOG_FILE = os.path.join(RESULTS_DIR, "attack_log.jsonl")
+LEGACY_LOG_FILE = os.path.join(RESULTS_DIR, "attack_log.json")
 
 # Bounded concurrency for batch testing. This IS the rate-limit control: at most
 # MAX_WORKERS attacks are in flight at once, and the SDKs auto-retry 429s with

@@ -2,11 +2,11 @@
 """
 generate_dashboard.py — Red Team Attack Simulator Dashboard Generator
 
-Reads results/attack_log.json and generates a fully interactive HTML dashboard
+Reads results/attack_log.jsonl and generates a fully interactive HTML dashboard
 with animated charts, scroll-triggered reveals, and test session history.
 
 Usage:
-    python generate_dashboard.py                  # Default: reads results/attack_log.json
+    python generate_dashboard.py                  # Default: reads results/attack_log.jsonl
     python generate_dashboard.py -i custom.json   # Custom input file
     python generate_dashboard.py -o docs/          # Custom output directory (for GitHub Pages)
 
@@ -28,25 +28,33 @@ from chain_dashboard import extract_chain_results, compute_chain_stats, gen_chai
 # ── Data Processing ───────────────────────────────────────────────────────────
 
 def load_results(filepath: str) -> list[dict]:
-    """Load attack results from JSON file."""
+    """Load attack results from a JSON Lines log, a JSON array, or a report dict."""
     if not os.path.exists(filepath):
         print(f"[ERROR] File not found: {filepath}")
         sys.exit(1)
-    
-    with open(filepath, "r") as f:
-        data = json.load(f)
-    
-    # Handle both raw list and report-wrapped formats
-    if isinstance(data, list):
-        return data
-    elif isinstance(data, dict):
-        if "all_results" in data:
-            return data["all_results"]
-        elif "results" in data:
-            return data["results"]
-    
-    print("[ERROR] Unrecognized JSON format. Expected a list or dict with 'all_results'.")
-    sys.exit(1)
+
+    with open(filepath, "r", encoding="utf-8") as f:
+        text = f.read().strip()
+    if not text:
+        return []
+
+    # Whole-file JSON first (array log or report-wrapped dict)...
+    try:
+        data = json.loads(text)
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict):
+            return data.get("all_results") or data.get("results") or []
+    except json.JSONDecodeError:
+        pass
+
+    # ...otherwise treat as JSON Lines (one record per line).
+    try:
+        return [json.loads(line) for line in text.splitlines() if line.strip()]
+    except json.JSONDecodeError:
+        print("[ERROR] Unrecognized log format. Expected JSON Lines, a JSON array, "
+              "or a report dict with 'all_results'.")
+        sys.exit(1)
 
 
 # Severity risk weights — criticals dominate the posture math so blocking them
@@ -1855,8 +1863,8 @@ def main():
     )
     parser.add_argument(
         "-i", "--input",
-        default="results/attack_log.json",
-        help="Path to attack log JSON file (default: results/attack_log.json)"
+        default="results/attack_log.jsonl",
+        help="Path to attack log (JSONL, default: results/attack_log.jsonl)"
     )
     parser.add_argument(
         "-o", "--output-dir",
@@ -1868,7 +1876,7 @@ def main():
     build_dashboard(args.input, args.output_dir, github_pages_tip=True, open_browser=True)
 
 
-def build_dashboard(input_path: str = "results/attack_log.json",
+def build_dashboard(input_path: str = "results/attack_log.jsonl",
                     output_dir: str = ".", github_pages_tip: bool = False,
                     open_browser: bool = False) -> str:
     """Build the dashboard HTML from a log file. Safe to call in-process — takes

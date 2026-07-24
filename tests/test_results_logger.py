@@ -1,6 +1,5 @@
-"""Tests for ResultsLogger: thread-safety, atomic writes, corrupt recovery."""
+"""Tests for ResultsLogger: thread-safety, atomic JSONL writes, corrupt recovery."""
 
-import json
 import threading
 
 from results_logger import ResultsLogger
@@ -16,9 +15,14 @@ ATTACK = {
 
 def _logger_at(tmp_path):
     lg = ResultsLogger()
-    lg.log_file = str(tmp_path / "attack_log.json")
+    lg.log_file = str(tmp_path / "attack_log.jsonl")
     lg.results = []
     return lg
+
+
+def _read(lg):
+    """Read the log back through the logger's own JSONL parser."""
+    return ResultsLogger._read_jsonl(lg.log_file)
 
 
 def test_impact_scoring(tmp_path):
@@ -41,24 +45,32 @@ def test_concurrent_writes_are_lossless_and_unique(tmp_path):
     for t in threads:
         t.join()
 
-    with open(lg.log_file, encoding="utf-8") as f:
-        data = json.load(f)
-
+    data = _read(lg)
     assert len(data) == 50
     assert sorted(e["id"] for e in data) == list(range(1, 51))
 
 
-def test_atomic_write_produces_valid_json(tmp_path):
+def test_atomic_write_produces_valid_jsonl(tmp_path):
     lg = _logger_at(tmp_path)
     lg.log_result(ATTACK, "claude", "x", success=True, notes="")
-    # No leftover temp file, and the log parses.
-    assert not (tmp_path / "attack_log.json.tmp").exists()
-    with open(lg.log_file, encoding="utf-8") as f:
-        assert isinstance(json.load(f), list)
+    # No leftover temp file, and every line parses as JSON.
+    assert not (tmp_path / "attack_log.jsonl.tmp").exists()
+    data = _read(lg)
+    assert isinstance(data, list) and len(data) == 1
+
+
+def test_roundtrip_reload(tmp_path):
+    lg = _logger_at(tmp_path)
+    lg.log_result(ATTACK, "claude", "x", success=True, notes="")
+    lg.log_result(ATTACK, "bedrock", "y", success=False, notes="")
+    # A fresh logger pointed at the same file must see both records.
+    lg2 = ResultsLogger()
+    lg2.log_file = lg.log_file
+    assert len(lg2._load_existing()) == 2
 
 
 def test_corrupt_log_is_quarantined_not_fatal(tmp_path):
-    log_path = tmp_path / "attack_log.json"
+    log_path = tmp_path / "attack_log.jsonl"
     log_path.write_text("{ this is not valid json", encoding="utf-8")
 
     lg = ResultsLogger()
@@ -66,7 +78,7 @@ def test_corrupt_log_is_quarantined_not_fatal(tmp_path):
     recovered = lg._load_existing()  # must not raise
 
     assert recovered == []
-    assert (tmp_path / "attack_log.json.corrupt").exists()
+    assert (tmp_path / "attack_log.jsonl.corrupt").exists()
 
 
 def test_summary_breakdowns(tmp_path):

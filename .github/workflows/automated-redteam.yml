@@ -139,16 +139,23 @@ jobs:
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "Red Team Bot"
-          
+          # Enable the 'ours' merge driver referenced by .gitattributes so a
+          # rebase auto-resolves the regenerable dashboard/summary files, and the
+          # JSONL log union-merges — no manual conflict resolution in CI.
+          git config --local merge.ours.driver true
+
           # Add results and dashboard
-          git add results/attack_log.json results/automated_run_summary.json docs/index.html
-          
+          git add results/attack_log.jsonl results/automated_run_summary.json docs/index.html
+
           # Only commit if there are changes
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
             TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
             git commit -m "🤖 Automated red team run - $TIMESTAMP"
+            # Integrate any commits pushed since checkout, then push. Generated
+            # files resolve automatically via .gitattributes merge drivers.
+            git pull --rebase --autostash origin main || git rebase --abort
             git push
             echo "✅ Results pushed to repository"
           fi
@@ -186,7 +193,7 @@ jobs:
         with:
           name: red-team-results-${{ github.run_number }}
           path: |
-            results/attack_log.json
+            results/attack_log.jsonl
             results/automated_run_summary.json
             docs/index.html
           retention-days: 90

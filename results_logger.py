@@ -8,7 +8,7 @@ import json
 import os
 import threading
 from datetime import datetime, timezone
-from config import RESULTS_DIR, LOG_FILE
+from config import RESULTS_DIR, LOG_FILE, LEGACY_LOG_FILE
 from utils import log
 
 
@@ -27,13 +27,15 @@ class ResultsLogger:
         self.results = self._load_existing()
 
     def _load_existing(self) -> list:
-        """Load existing results from log file, recovering from corruption."""
+        """Load existing results (JSON Lines), recovering from corruption.
+
+        One-time migration: if the JSONL file is absent but the legacy JSON-array
+        log exists, read that instead so no history is lost on the format switch.
+        """
         if not os.path.exists(self.log_file):
-            return []
+            return self._load_legacy()
         try:
-            with open(self.log_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            return data if isinstance(data, list) else []
+            return self._read_jsonl(self.log_file)
         except (json.JSONDecodeError, OSError) as e:
             # Don't lose the run over a corrupt log — back it up and start clean.
             backup = f"{self.log_file}.corrupt"
@@ -44,11 +46,39 @@ class ResultsLogger:
                 log(f"Could not read or quarantine log file: {e}", level="ERROR")
             return []
 
+    def _load_legacy(self) -> list:
+        """Read the old JSON-array log for one-time migration, if present."""
+        if self.log_file.endswith(".jsonl") and os.path.exists(LEGACY_LOG_FILE):
+            try:
+                with open(LEGACY_LOG_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                return data if isinstance(data, list) else []
+            except (json.JSONDecodeError, OSError):
+                return []
+        return []
+
+    @staticmethod
+    def _read_jsonl(path: str) -> list:
+        """Parse a JSON Lines file into a list of records (blank lines skipped)."""
+        out = []
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    out.append(json.loads(line))
+        return out
+
     def _save(self):
-        """Atomically write results to disk (temp file + replace)."""
+        """Atomically write results as JSON Lines (temp file + replace).
+
+        One record per line makes the log git-friendly: git's ``union`` merge
+        driver keeps appended lines from both sides, so concurrent local and CI
+        runs never conflict.
+        """
         tmp = f"{self.log_file}.tmp"
         with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(self.results, f, indent=2)
+            for entry in self.results:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
         os.replace(tmp, self.log_file)  # atomic on POSIX and Windows
 
     def log_result(self, attack: dict, target: str, response: str, success: bool, notes: str = "") -> dict:

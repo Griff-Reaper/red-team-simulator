@@ -1,0 +1,13 @@
+# Keep generated/committed artifacts from ever causing merge conflicts.
+#
+# The result log is JSON Lines (one record per line). git's built-in `union`
+# merge driver keeps appended lines from BOTH sides, so concurrent local runs
+# and scheduled CI runs merge losslessly with zero conflicts.
+results/attack_log.jsonl merge=union
+
+# These are 100% regenerable from the log. On a merge, keep our copy and just
+# regenerate — never a conflict, never lost data. Requires the driver to be
+# enabled once per clone:  git config merge.ours.driver true
+# (CI enables it automatically; see .github/workflows/automated-redteam.yml)
+docs/index.html                       merge=ours
+results/automated_run_summary.json    merge=ours

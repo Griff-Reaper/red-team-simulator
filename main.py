@@ -4,16 +4,14 @@ Red Team Attack Simulator - Main Orchestrator
 AI-powered adversarial testing framework for LLM security assessment.
 """
 
-import json
 import sys
 from attack_generator import AttackGenerator
 from attack_taxonomy import AttackCategory, ATTACK_TECHNIQUES, get_techniques_by_category
 from target_tester import TargetTester
 from results_logger import ResultsLogger
-from multi_turn_chains import get_all_chains, get_chain, EscalationStrategy
+from multi_turn_chains import get_all_chains, get_chain
 from multi_turn_tester import MultiTurnTester
 from apt_simulator import APTSimulator
-from apt_personas import get_all_personas
 
 
 def print_banner():
@@ -58,56 +56,68 @@ def print_menu():
     print("  ─── APT PERSONA MODE ───────────────")
     print("  13. APT Persona Mode")
     print("  14. Browse APT Profiles")
+    print("  ─── AI RECON & VERIFICATION ─────────")
+    print("  15. White-Box Recon (Shannon)")
+    print("  16. Targeted Engagement (recon → attack → verify → remediate)")
+    print("  17. Verify Findings (Xalgorix panel)")
+    print("  18. Remediation Report (Strix)")
+    print("  ─── REPORTING ───────────────────────")
+    print("  19. Generate & Open Dashboard")
     print("  ─────────────────────────────")
     print("  0.  Exit")
     print("=" * 50)
 
 
-def select_target() -> list:
-    """Let user pick which targets to attack."""
+# Menu-number → target-id mapping, kept in sync with TargetTester.SUPPORTED_TARGETS.
+_TARGET_MENU = {
+    "1": "azure-openai",
+    "2": "claude",
+    "3": "aria",
+    "4": "firewall",
+    "5": "bedrock",
+    "6": "bedrock-guardrails",
+}
+_ALL_TARGETS = list(_TARGET_MENU.values())
+
+
+def _print_target_menu(include_all: bool):
     print("\n  Select Target(s):")
     print("  1. Azure OpenAI (GPT-4o)")
-    print("  2. Claude (Sonnet)")
+    print("  2. Claude")
     print("  3. ARIA Honeypot")
     print("  4. Prompt Firewall")
-    print("  5. All")
+    print("  5. Amazon Bedrock")
+    print("  6. Amazon Bedrock + Guardrails")
+    if include_all:
+        print("  7. All")
+
+
+def select_target() -> list:
+    """Let user pick which targets to attack."""
+    _print_target_menu(include_all=True)
 
     choice = input("\n  > ").strip()
-    if choice == "1":
-        return ["azure-openai"]
-    elif choice == "2":
-        return ["claude"]
-    elif choice == "3":
-        return ["aria"]
-    elif choice == "4":
-        return ["firewall"]
-    elif choice == "5":
-        return ["azure-openai", "claude", "aria", "firewall"]
-    else:
-        print("  Invalid choice, defaulting to all.")
-        return ["azure-openai", "claude", "aria", "firewall"]
+    if choice == "7":
+        return list(_ALL_TARGETS)
+    if choice in _TARGET_MENU:
+        return [_TARGET_MENU[choice]]
+    print("  Invalid choice, defaulting to all.")
+    return list(_ALL_TARGETS)
 
 
 def select_single_target() -> str:
-    """Let user pick a single target (for multi-turn)."""
+    """Pick a single conversational target (multi-turn supports Azure & Claude only)."""
     print("\n  Select Target:")
     print("  1. Azure OpenAI (GPT-4o)")
-    print("  2. Claude (Sonnet)")
-    print("  3. ARIA Honeypot")
-    print("  4. Prompt Firewall")
+    print("  2. Claude")
 
     choice = input("\n  > ").strip()
     if choice == "1":
         return "azure-openai"
-    elif choice == "2":
+    if choice == "2":
         return "claude"
-    elif choice == "3":
-        return "aria"
-    elif choice == "4":
-        return "firewall"
-    else:
-        print("  Invalid choice, defaulting to Claude.")
-        return "claude"
+    print("  Invalid choice, defaulting to Claude.")
+    return "claude"
 
 
 def select_category() -> AttackCategory:
@@ -339,6 +349,20 @@ def option_browse_taxonomy():
         for t in techniques:
             print(f"    {t.id} | {t.name} | {t.severity.value.upper()}")
             print(f"         {t.description}")
+            atlas = ", ".join(t.mitre_atlas) if t.mitre_atlas else "—"
+            print(f"         Frameworks: OWASP {t.owasp or '—'} | MITRE ATLAS {atlas}")
+
+    from attack_taxonomy import framework_coverage
+    cov = framework_coverage()
+    print("\n" + "=" * 50)
+    print("  FRAMEWORK COVERAGE")
+    print("=" * 50)
+    print(f"  Techniques:   {cov['techniques']}")
+    print(f"  OWASP LLM'25: {cov['owasp_llm_2025']['covered_count']}/"
+          f"{cov['owasp_llm_2025']['total']} categories "
+          f"({', '.join(cov['owasp_llm_2025']['covered'])})")
+    print(f"  MITRE ATLAS:  {cov['mitre_atlas']['covered_count']} techniques "
+          f"({', '.join(cov['mitre_atlas']['covered'])})")
 
 
 # ── Multi-Turn Options ────────────────────────────────────────────────────────
@@ -347,6 +371,9 @@ def option_single_chain(mt_tester: MultiTurnTester):
     """Run a single escalation chain against a target."""
     chain_id = select_chain()
     chain = get_chain(chain_id)
+    if chain is None:
+        print(f"  Chain '{chain_id}' not found. Aborted.")
+        return
 
     print(f"\n  Chain: {chain.name}")
     print(f"  Strategy: {chain.strategy.value}")
@@ -419,11 +446,201 @@ def option_browse_chains():
         print()
 
 
+# ── AI Recon & Verification (Shannon / Xalgorix / Strix) ──────────────────────
+
+def _read_target_config() -> str:
+    """Prompt for a system prompt / config via paste or file."""
+    print("\n  Provide the target's system prompt / configuration:")
+    print("  1. Paste text")
+    print("  2. Load from file")
+    choice = input("\n  > ").strip()
+    if choice == "2":
+        path = input("  File path > ").strip()
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                return f.read()
+        except OSError as e:
+            print(f"  Could not read file: {e}")
+            return ""
+    print("  Paste the text, then enter a single '.' on its own line to finish:")
+    lines = []
+    while True:
+        try:
+            line = input()
+        except EOFError:
+            break
+        if line.strip() == ".":
+            break
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def _print_recon(result: dict):
+    """Render a recon attack-surface map."""
+    print("\n" + "=" * 60)
+    print(f"  WHITE-BOX RECON  (source: {result.get('source', 'heuristic')})")
+    print("=" * 60)
+    surfaces = result.get("attack_surface", [])
+    if surfaces:
+        print("\n  Attack Surface:")
+        for s in surfaces:
+            print(f"    • {s['surface']}  [OWASP {s.get('owasp', '—')}]")
+            if s.get("evidence"):
+                print(f"      evidence: \"{s['evidence'][:80]}\"")
+    else:
+        print("\n  No distinct attack-surface signals detected.")
+    print(f"\n  Recommended techniques: {', '.join(result.get('recommended_techniques', [])) or '—'}")
+    if result.get("risk_notes"):
+        print("\n  Risk notes:")
+        for note in result["risk_notes"]:
+            print(f"    ⚠  {note}")
+
+
+def option_white_box_recon() -> dict:
+    """Shannon-style: read a target's config and map its LLM attack surface."""
+    from recon import ReconAnalyzer
+
+    text = _read_target_config()
+    if not text.strip():
+        print("  No configuration provided. Aborted.")
+        return {}
+
+    analyzer = ReconAnalyzer()
+    deep = input("\n  Use LLM deep analysis? (y/n, default: n heuristic) > ").strip().lower()
+    result = analyzer.analyze_with_llm(text) if deep == "y" else analyzer.analyze_text(text)
+    _print_recon(result)
+    return result
+
+
+def option_targeted_engagement(generator: AttackGenerator, tester: TargetTester):
+    """Full pipeline: recon → generate recommended attacks → fire → verify → remediate."""
+    from verification import FindingVerifier
+    from remediation import remediations_for_findings
+
+    result = option_white_box_recon()
+    recommended = result.get("recommended_techniques", []) if result else []
+    if not recommended:
+        return
+
+    targets = select_target()
+    confirm = input(f"\n  Launch targeted engagement ({len(recommended)} techniques × "
+                    f"{len(targets)} target(s))? (y/n) > ").strip().lower()
+    if confirm != "y":
+        print("  Aborted.")
+        return
+
+    print("\n[*] Phase 1/3 — Generating recommended attacks...")
+    attacks = [generator.generate_single(tid) for tid in recommended]
+
+    print("[*] Phase 2/3 — Executing attacks...")
+    results = tester.test_batch(attacks, targets)
+
+    print("[*] Phase 3/3 — Verifying findings (adversarial panel)...")
+    verifier = FindingVerifier()
+    verification = verifier.verify_results(results)
+    vs = verification["summary"]
+    print(f"\n  Verification: {vs['confirmed']} confirmed, "
+          f"{vs['downgraded']} downgraded as false positives "
+          f"(of {vs['claimed_successes']} claimed).")
+
+    remediation = remediations_for_findings(verification["confirmed"])
+    _print_remediation(remediation)
+
+
+def option_verify_findings(logger: ResultsLogger):
+    """Xalgorix-style: re-verify logged successes with an adversarial panel."""
+    from verification import FindingVerifier
+
+    logger.results = logger._load_existing()
+    successes = [r for r in logger.results if r.get("success")]
+    if not successes:
+        print("\n  No successful findings on record to verify.")
+        return
+
+    print(f"\n[*] Verifying {len(successes)} claimed success(es) with an "
+          f"independent adversarial panel...")
+    report = FindingVerifier().verify_results(logger.results)
+    s = report["summary"]
+    print("\n" + "=" * 60)
+    print("  VERIFICATION RESULTS")
+    print("=" * 60)
+    print(f"  Confirmed real:            {s['confirmed']}")
+    print(f"  Downgraded (false positive): {s['downgraded']}")
+    for fp in report["false_positives"]:
+        v = fp["verification"]
+        print(f"    ✗ [{fp['technique_id']}] → {fp['target']} "
+              f"(confirm ratio {v['confirm_ratio']}, {v['votes']} votes)")
+    for ok in report["confirmed"]:
+        v = ok["verification"]
+        print(f"    ✓ [{ok['technique_id']}] → {ok['target']} "
+              f"(confirm ratio {v['confirm_ratio']})")
+
+
+def _print_remediation(report: list):
+    """Render a Strix-style remediation report."""
+    print("\n" + "=" * 60)
+    print("  REMEDIATION REPORT (OWASP LLM Top 10 · 2025)")
+    print("=" * 60)
+    if not report:
+        print("  No confirmed findings — nothing to remediate. 🎉")
+        return
+    for item in report:
+        print(f"\n  ▸ {item['owasp']} — {item['owasp_name']}  "
+              f"({item['finding_count']} finding(s))")
+        print(f"    Affected: {', '.join(item['affected_techniques'])}")
+        print(f"    {item['summary']}")
+        print("    Controls:")
+        for c in item["controls"]:
+            print(f"      • {c}")
+        print(f"    References: {', '.join(item['references'])}")
+
+
+def option_remediation_report(logger: ResultsLogger):
+    """Strix-style: generate actionable mitigations for logged successful findings."""
+    from remediation import remediations_for_findings
+
+    logger.results = logger._load_existing()
+    report = remediations_for_findings(logger.results)
+    _print_remediation(report)
+
+
+def option_generate_dashboard():
+    """Rebuild the HTML dashboard from the current log and open it in a browser.
+
+    This is the canonical way to refresh the dashboard after an interactive run —
+    the menu does not auto-generate it, so a browser refresh alone shows stale HTML.
+    """
+    from config import LOG_FILE
+    import generate_dashboard
+
+    print("\n[*] Regenerating dashboard from the current attack log...")
+    try:
+        generate_dashboard.build_dashboard(LOG_FILE, "docs", open_browser=True)
+        print("[✓] Dashboard rebuilt and opened. (Canonical file: docs/index.html)")
+    except Exception as e:
+        print(f"[!] Dashboard generation failed: {e}")
+
+
+def _preflight_check():
+    """Warn (don't crash) about missing configuration before the menu loop."""
+    import config
+
+    problems = config.validate(["azure", "anthropic"])
+    if problems:
+        print("\n  ⚠️  Configuration warnings:")
+        for cap, missing in problems.items():
+            print(f"     {cap}: missing {', '.join(missing)}")
+        print("     Affected targets/features will error until these are set in .env.\n")
+    else:
+        print("[✓] Configuration validated.")
+
+
 def main():
     """Main entry point."""
     print_banner()
 
     print("[*] Initializing components...")
+    _preflight_check()
     generator = AttackGenerator()
     tester = TargetTester()
     logger = ResultsLogger()
@@ -465,6 +682,16 @@ def main():
             option_apt_persona_mode(apt_sim)
         elif choice == "14":
             option_browse_apt_profiles()
+        elif choice == "15":
+            option_white_box_recon()
+        elif choice == "16":
+            option_targeted_engagement(generator, tester)
+        elif choice == "17":
+            option_verify_findings(logger)
+        elif choice == "18":
+            option_remediation_report(logger)
+        elif choice == "19":
+            option_generate_dashboard()
         elif choice == "0":
             print("\n[*] Shutting down simulator. Stay dangerous. 🔥")
             sys.exit(0)

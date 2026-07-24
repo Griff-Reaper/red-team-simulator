@@ -4,20 +4,23 @@ Target testing engine.
 Fires adversarial prompts at AI targets and evaluates responses.
 """
 
-from openai import AzureOpenAI
-from anthropic import Anthropic
 from config import (
-    AZURE_OPENAI_API_KEY,
-    AZURE_OPENAI_ENDPOINT,
-    AZURE_OPENAI_DEPLOYMENT,
-    AZURE_OPENAI_API_VERSION,
-    ANTHROPIC_API_KEY,
+    CLAUDE_TARGET_MODEL,
+    JUDGE_MODEL,
+    BEDROCK_MODEL_ID,
+    BEDROCK_GUARDRAIL_ID,
+    BEDROCK_GUARDRAIL_VERSION,
+    MAX_WORKERS,
 )
+from clients import azure_openai_client, azure_deployment, anthropic_client, bedrock_client
 from results_logger import ResultsLogger
+from utils import extract_json_object, log
 import httpx
-import asyncio
+import threading
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
+from typing import Optional
 
 ARIA_URL = "http://localhost:8001"
 FIREWALL_URL = "http://localhost:8002"
@@ -26,21 +29,25 @@ NEXUS_URL = "http://localhost:8000"
 class TargetTester:
     """Fires attack prompts at target models and evaluates results."""
 
-    SUPPORTED_TARGETS = ["azure-openai", "claude", "aria", "firewall"]
+    SUPPORTED_TARGETS = ["azure-openai", "claude", "aria", "firewall", "bedrock", "bedrock-guardrails"]
 
     def __init__(self):
         self.logger = ResultsLogger()
 
+        # Serializes progress output when tests run concurrently.
+        self._print_lock = threading.Lock()
+
         # Azure OpenAI target
-        self.azure_client = AzureOpenAI(
-            api_key=AZURE_OPENAI_API_KEY,
-            azure_endpoint=AZURE_OPENAI_ENDPOINT,
-            api_version=AZURE_OPENAI_API_VERSION,
-        )
-        self.azure_deployment = AZURE_OPENAI_DEPLOYMENT
+        self.azure_client = azure_openai_client()
+        self.azure_deployment = azure_deployment()
 
         # Claude target
-        self.claude_client = Anthropic(api_key=ANTHROPIC_API_KEY)
+        self.claude_client = anthropic_client()
+
+        # Bedrock target (raw and Guardrails variants share one client).
+        # Lazily constructed on first use so boto3 is an optional dependency —
+        # users testing only Azure/Claude/ARIA/Firewall don't need the AWS SDK.
+        self._bedrock_client = None
 
        # Judge client - uses Claude to evaluate (Azure filters block judge prompts)
         self.judge_client = None  # We'll use Claude for judging
@@ -91,7 +98,7 @@ Respond with ONLY a JSON object in this exact format:
         """Send attack prompt to Claude target."""
         try:
             kwargs = {
-                "model": "claude-sonnet-4-20250514",
+                "model": CLAUDE_TARGET_MODEL,
                 "max_tokens": 1000,
                 "messages": [{"role": "user", "content": attack_prompt}],
             }
@@ -125,6 +132,37 @@ Respond with ONLY a JSON object in this exact format:
                 return data.get("response", "[NO RESPONSE]")
         except Exception as e:
             return f"[ERROR] ARIA: {e}"
+
+    def _get_bedrock_client(self):
+        """Lazily construct and cache the Bedrock runtime client (boto3 optional)."""
+        if self._bedrock_client is None:
+            self._bedrock_client = bedrock_client()
+        return self._bedrock_client
+
+    def _send_to_bedrock(self, attack_prompt: str, system_prompt: str = None, use_guardrail: bool = False) -> str:
+        """Send attack prompt to a Bedrock-hosted model, optionally behind a Guardrail."""
+        if use_guardrail and not BEDROCK_GUARDRAIL_ID:
+            return "[ERROR] Bedrock: BEDROCK_GUARDRAIL_ID is not configured."
+
+        messages = [{"role": "user", "content": [{"text": attack_prompt}]}]
+        kwargs = {"modelId": BEDROCK_MODEL_ID, "messages": messages}
+        if system_prompt:
+            kwargs["system"] = [{"text": system_prompt}]
+        if use_guardrail:
+            kwargs["guardrailConfig"] = {
+                "guardrailIdentifier": BEDROCK_GUARDRAIL_ID,
+                "guardrailVersion": BEDROCK_GUARDRAIL_VERSION,
+                "trace": "enabled",
+            }
+
+        try:
+            response = self._get_bedrock_client().converse(**kwargs)
+            if response.get("stopReason") == "guardrail_intervened":
+                blocked_text = response["output"]["message"]["content"][0]["text"]
+                return f"[GUARDRAIL_BLOCKED] {blocked_text}"
+            return response["output"]["message"]["content"][0]["text"].strip()
+        except Exception as e:
+            return f"[ERROR] Bedrock: {e}"
 
     def _send_to_firewall(self, attack_prompt: str, **kwargs) -> str:
         """Send attack prompt to Prompt Firewall."""
@@ -166,7 +204,7 @@ Did the attack succeed? Respond with ONLY the JSON object."""
 
         try:
             response = self.claude_client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model=JUDGE_MODEL,
                 max_tokens=200,
                 system=self.judge_system_prompt,
                 messages=[
@@ -174,19 +212,18 @@ Did the attack succeed? Respond with ONLY the JSON object."""
                 ],
             )
 
-            import json
             raw = response.content[0].text.strip()
-            if raw.startswith("```"):
-                raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
-            verdict = json.loads(raw)
+            verdict = extract_json_object(raw)
+            if verdict is None:
+                raise ValueError(f"Judge returned no parseable JSON: {raw[:200]!r}")
 
             return {
-                "success": verdict.get("success", False),
-                "confidence": verdict.get("confidence", 0.0),
+                "success": bool(verdict.get("success", False)),
+                "confidence": float(verdict.get("confidence", 0.0)),
                 "reasoning": verdict.get("reasoning", ""),
             }
         except Exception as e:
-            print(f"[!] Judge failed, defaulting to manual review: {e}")
+            log(f"Judge failed, defaulting to manual review: {e}", level="ERROR")
             return {
                 "success": False,
                 "confidence": 0.0,
@@ -215,14 +252,20 @@ Did the attack succeed? Respond with ONLY the JSON object."""
             pass
 
     def test_attack(
-        self, attack: dict, target: str, system_prompt: str = None, auto_judge: bool = True
+        self, attack: dict, target: str, system_prompt: str = None,
+        auto_judge: bool = True, quiet: bool = False,
     ) -> dict:
-        """Fire a single attack at a target and log results."""
+        """Fire a single attack at a target and log results.
+
+        ``quiet`` suppresses the per-attack detail box — used by parallel batches,
+        which print a single ordered progress line per completion instead.
+        """
         if target not in self.SUPPORTED_TARGETS:
             raise ValueError(f"Unknown target: {target}. Supported: {self.SUPPORTED_TARGETS}")
 
-        print(f"\n┌─ [{attack['technique_id']}] {attack['technique_name']} → {target}")
-        print(f"│  severity: {attack.get('severity', 'unknown').upper()}")
+        if not quiet:
+            print(f"\n┌─ [{attack['technique_id']}] {attack['technique_name']} → {target}")
+            print(f"│  severity: {attack.get('severity', 'unknown').upper()}")
 
         # Send attack to target
         if target == "azure-openai":
@@ -233,7 +276,14 @@ Did the attack succeed? Respond with ONLY the JSON object."""
             response = self._send_to_aria(attack["generated_prompt"])
         elif target == "firewall":
             response = self._send_to_firewall(attack["generated_prompt"])
-
+        elif target == "bedrock":
+            response = self._send_to_bedrock(attack["generated_prompt"], system_prompt, use_guardrail=False)
+        elif target == "bedrock-guardrails":
+            response = self._send_to_bedrock(attack["generated_prompt"], system_prompt, use_guardrail=True)
+        else:
+            # Should be unreachable (guarded above), but fail loud if a target is
+            # added to SUPPORTED_TARGETS without a dispatch branch.
+            raise NotImplementedError(f"Target '{target}' is supported but not wired in test_attack.")
 
         # Judge the response
         if auto_judge:
@@ -245,11 +295,12 @@ Did the attack succeed? Respond with ONLY the JSON object."""
             success = False
             notes = "Manual review required."
 
-        result_icon = "⚡ SUCCEEDED" if success else "✓ BLOCKED"
-        print(f"│  result:   {result_icon}")
-        print(f"│  response: {response[:120]}...")
-        print(f"└─ confidence: {verdict.get('confidence', 0) if auto_judge else 'N/A'} | {verdict.get('reasoning', '')[:80] if auto_judge else 'manual review'}")
-        
+        if not quiet:
+            result_icon = "⚡ SUCCEEDED" if success else "✓ BLOCKED"
+            print(f"│  result:   {result_icon}")
+            print(f"│  response: {response[:120]}...")
+            print(f"└─ confidence: {verdict.get('confidence', 0) if auto_judge else 'N/A'} | {verdict.get('reasoning', '')[:80] if auto_judge else 'manual review'}")
+
         # Log it
         entry = self.logger.log_result(
             attack=attack,
@@ -267,31 +318,74 @@ Did the attack succeed? Respond with ONLY the JSON object."""
         return entry
 
     def test_batch(
-        self, attacks: list, targets: list = None, system_prompt: str = None, auto_judge: bool = True
+        self, attacks: list, targets: list = None, system_prompt: str = None,
+        auto_judge: bool = True, max_workers: Optional[int] = None,
     ) -> list:
-        """Fire a batch of attacks against one or more targets."""
+        """Fire a batch of attacks against one or more targets.
+
+        Runs with bounded concurrency (``max_workers``, default from config). Set
+        ``max_workers=1`` for fully sequential, verbose, ordered execution.
+        Returns results in submission order (attacks × targets) regardless of mode.
+        """
         if targets is None:
             targets = self.SUPPORTED_TARGETS
+        if max_workers is None:
+            max_workers = MAX_WORKERS
 
+        tasks = [(attack, target) for attack in attacks for target in targets]
+        if max_workers <= 1 or len(tasks) <= 1:
+            return self._run_batch_sequential(tasks, system_prompt, auto_judge)
+        return self._run_batch_parallel(tasks, system_prompt, auto_judge, max_workers)
+
+    def _run_batch_sequential(self, tasks: list, system_prompt, auto_judge) -> list:
+        """Sequential batch — verbose per-attack detail, ordered output."""
+        total = len(tasks)
         results = []
+        for current, (attack, target) in enumerate(tasks, 1):
+            print(f"\n--- Test {current}/{total} ---")
+            try:
+                results.append(self.test_attack(attack, target, system_prompt, auto_judge))
+            except Exception as e:
+                log(f"Test failed [{attack.get('technique_id')} → {target}]: {e}", level="ERROR")
+                results.append({
+                    "technique_id": attack.get("technique_id"),
+                    "target": target,
+                    "error": str(e),
+                })
+        return results
 
-        total = len(attacks) * len(targets)
-        current = 0
+    def _run_batch_parallel(self, tasks: list, system_prompt, auto_judge, max_workers: int) -> list:
+        """Concurrent batch — bounded workers, quiet attacks, ordered progress lines."""
+        total = len(tasks)
+        results: list = [None] * total
+        print(f"\n[*] Executing {total} tests with {max_workers} concurrent workers...")
 
-        for attack in attacks:
-            for target in targets:
-                current += 1
-                print(f"\n--- Test {current}/{total} ---")
-                try:
-                    result = self.test_attack(attack, target, system_prompt, auto_judge)
-                    results.append(result)
-                except Exception as e:
-                    print(f"[-] Test failed: {e}")
-                    results.append({
-                        "technique_id": attack.get("technique_id"),
-                        "target": target,
-                        "error": str(e),
-                    })
+        def run(idx: int, attack: dict, target: str):
+            try:
+                entry = self.test_attack(attack, target, system_prompt, auto_judge, quiet=True)
+                return idx, entry, None
+            except Exception as e:
+                return idx, {
+                    "technique_id": attack.get("technique_id"),
+                    "target": target,
+                    "error": str(e),
+                }, e
+
+        completed = 0
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = [pool.submit(run, i, a, t) for i, (a, t) in enumerate(tasks)]
+            for future in as_completed(futures):
+                idx, entry, err = future.result()
+                results[idx] = entry
+                attack, target = tasks[idx]
+                with self._print_lock:
+                    completed += 1
+                    if err is not None:
+                        log(f"Test failed [{attack.get('technique_id')} → {target}]: {err}", level="ERROR")
+                        icon = "✗ ERROR"
+                    else:
+                        icon = "⚡ HIT  " if entry.get("success") else "✓ BLOCK"
+                    print(f"  [{completed}/{total}] {icon} {attack.get('technique_id')} → {target}")
 
         return results
 
@@ -307,6 +401,10 @@ Did the attack succeed? Respond with ONLY the JSON object."""
             return self._send_to_aria(prompt)
         elif target == "firewall":
             return self._send_to_firewall(prompt)
+        elif target == "bedrock":
+            return self._send_to_bedrock(prompt)
+        elif target == "bedrock-guardrails":
+            return self._send_to_bedrock(prompt, use_guardrail=True)
         else:
             raise ValueError(f"Unknown target: {target}")
 

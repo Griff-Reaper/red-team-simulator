@@ -10,7 +10,7 @@ Usage:
     python generate_dashboard.py -i custom.json   # Custom input file
     python generate_dashboard.py -o docs/          # Custom output directory (for GitHub Pages)
 
-The generated dashboard.html is a self-contained file with no external
+The generated index.html is a self-contained file with no external
 dependencies beyond Google Fonts. Push to GitHub Pages for live hosting.
 """
 
@@ -18,6 +18,7 @@ import json
 import os
 import sys
 import argparse
+import webbrowser
 from datetime import datetime, timezone
 from collections import defaultdict
 from html import escape
@@ -48,19 +49,58 @@ def load_results(filepath: str) -> list[dict]:
     sys.exit(1)
 
 
+# Severity risk weights — criticals dominate the posture math so blocking them
+# matters far more than blocking low-severity noise.
+SEVERITY_WEIGHT = {"critical": 8, "high": 4, "medium": 2, "low": 1, "unknown": 2}
+
+
+def fmt_ts(ts: str, with_time: bool = True) -> str:
+    """Format an ISO timestamp as 'YYYY-MM-DD HH:MM UTC' (or date only)."""
+    if not ts or ts == "N/A":
+        return "N/A"
+    try:
+        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return str(ts)[:16]
+    return dt.strftime("%Y-%m-%d %H:%M UTC" if with_time else "%Y-%m-%d")
+
+
+def posture_score(results: list) -> float:
+    """Severity-weighted defense score, 0-100 (100 = every attack blocked)."""
+    total_risk = sum(SEVERITY_WEIGHT.get((r.get("severity") or "unknown").lower(), 2) for r in results)
+    if not total_risk:
+        return 100.0
+    realized = sum(
+        SEVERITY_WEIGHT.get((r.get("severity") or "unknown").lower(), 2)
+        for r in results if r.get("success")
+    )
+    return round(100 * (1 - realized / total_risk), 1)
+
+
+def letter_grade(score: float) -> str:
+    """Map a 0-100 score to a letter grade."""
+    for lo, g in [(97, "A+"), (93, "A"), (90, "A-"), (87, "B+"), (83, "B"),
+                  (80, "B-"), (77, "C+"), (73, "C"), (70, "C-"), (60, "D")]:
+        if score >= lo:
+            return g
+    return "F"
+
+
 def compute_stats(results: list[dict]) -> dict:
     """Compute all dashboard statistics from raw results."""
     total = len(results)
     hits = [r for r in results if r.get("success", False)]
     blocked = [r for r in results if not r.get("success", False)]
-    
+
     success_rate = round((len(hits) / total * 100), 1) if total > 0 else 0.0
     avg_impact = round(sum(r.get("impact_score", 0) for r in results) / total, 1) if total > 0 else 0.0
-    
-    # By target
+
+    # By target (with per-target result lists for defense scoring)
     by_target = defaultdict(lambda: {"total": 0, "hits": 0, "blocked": 0, "filtered": 0})
+    target_results = defaultdict(list)
     for r in results:
         t = r.get("target", "unknown")
+        target_results[t].append(r)
         by_target[t]["total"] += 1
         if r.get("success", False):
             by_target[t]["hits"] += 1
@@ -69,10 +109,13 @@ def compute_stats(results: list[dict]) -> dict:
         resp = r.get("response", "")
         if "[CONTENT_FILTERED]" in resp or "content_filter" in resp:
             by_target[t]["filtered"] += 1
-    
+
     for t in by_target:
         bt = by_target[t]
         bt["success_rate"] = round((bt["hits"] / bt["total"] * 100), 1) if bt["total"] > 0 else 0.0
+        bt["defense_rate"] = round(100 - bt["success_rate"], 1)
+        bt["posture"] = posture_score(target_results[t])
+        bt["grade"] = letter_grade(bt["posture"])
     
     # By category
     by_category = defaultdict(lambda: {"total": 0, "hits": 0, "blocked": 0})
@@ -104,9 +147,12 @@ def compute_stats(results: list[dict]) -> dict:
         techniques.add(r.get("technique_id", ""))
         targets.add(r.get("target", ""))
     
-    # Successful attacks (findings)
-    findings = [r for r in results if r.get("success", False)]
-    
+    # Successful attacks (findings) — newest first so fresh results lead.
+    findings = sorted(
+        (r for r in results if r.get("success", False)),
+        key=lambda r: r.get("timestamp", ""), reverse=True,
+    )
+
     # Test session tracking
     timestamps = [r.get("timestamp", "") for r in results if r.get("timestamp")]
     if timestamps:
@@ -125,13 +171,41 @@ def compute_stats(results: list[dict]) -> dict:
         first_test = "N/A"
         last_test = "N/A"
         num_sessions = 0
-    
+
+    # ── Evaluation scores (red + blue + purple team) ──────────────────────────
+    overall_posture = posture_score(results)
+    overall_grade = letter_grade(overall_posture)
+    defense_rate = round(100 - success_rate, 1)
+    crit_breaches = by_severity.get("critical", {}).get("hits", 0)
+    high_breaches = by_severity.get("high", {}).get("hits", 0)
+
+    # Purple-team A/B: how much a guardrail layer adds over the raw model.
+    guardrail_uplift = None
+    if "bedrock" in by_target and "bedrock-guardrails" in by_target:
+        guardrail_uplift = round(
+            by_target["bedrock-guardrails"]["defense_rate"] - by_target["bedrock"]["defense_rate"], 1
+        )
+
+    # Framework coverage (attack-surface breadth) — best effort.
+    try:
+        from attack_taxonomy import framework_coverage
+        coverage = framework_coverage()
+    except Exception:
+        coverage = None
+
     return {
         "total": total,
         "hits": len(hits),
         "blocked": len(blocked),
         "success_rate": success_rate,
+        "defense_rate": defense_rate,
         "avg_impact": avg_impact,
+        "posture_score": overall_posture,
+        "grade": overall_grade,
+        "crit_breaches": crit_breaches,
+        "high_breaches": high_breaches,
+        "guardrail_uplift": guardrail_uplift,
+        "coverage": coverage,
         "by_target": dict(by_target),
         "by_category": dict(by_category),
         "by_severity": dict(by_severity),
@@ -140,6 +214,7 @@ def compute_stats(results: list[dict]) -> dict:
         "findings": findings,
         "first_test": first_test,
         "last_test": last_test,
+        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
         "num_sessions": num_sessions,
         "sev_order": sev_order,
     }
@@ -171,6 +246,18 @@ TARGET_CONFIG = {
         "css_class": "claude",
         "defense": "Defense Strategy: Model-level reasoning analyzes attack intent and refuses intelligently. Provides explanations for refusals. More nuanced but vulnerable to indirect techniques that don't trigger obvious red flags.",
     },
+    "bedrock": {
+        "name": "AMAZON BEDROCK",
+        "subtitle": "Nova Lite (raw model)",
+        "css_class": "bedrock",
+        "defense": "Defense Strategy: Raw foundation model with no added guardrail layer. Baseline for measuring what the model refuses on its own versus what an external policy layer would need to catch.",
+    },
+    "bedrock-guardrails": {
+        "name": "BEDROCK + GUARDRAILS",
+        "subtitle": "Nova Lite + Guardrails",
+        "css_class": "bedrock-guardrails",
+        "defense": "Defense Strategy: Amazon Bedrock Guardrails wrap the model with configurable content, topic, and word policies that intercept prompts and responses before they reach or leave the model.",
+    },
 }
 
 SEVERITY_COLORS = {
@@ -179,6 +266,18 @@ SEVERITY_COLORS = {
     "medium": "var(--yellow)",
     "low": "#88aacc",
 }
+
+
+def _target_css_class(target: str) -> str:
+    """Map a target id to its CSS accent class (bedrock-guardrails before bedrock)."""
+    t = (target or "").lower()
+    if "guardrail" in t:
+        return "bedrock-guardrails"
+    if "bedrock" in t:
+        return "bedrock"
+    if "azure" in t:
+        return "azure"
+    return "claude"
 
 
 def bar_class(rate: float) -> str:
@@ -296,7 +395,7 @@ def gen_target_boxes(by_target: dict) -> str:
         
         boxes.append(f"""    <div class="target-box {cfg['css_class']}">
       <div class="target-name">{escape(cfg['name'])}</div>
-      <div style="font-family: 'Share Tech Mono', monospace; font-size: 11px; color: var(--text-muted);">{escape(cfg['subtitle'])}</div>
+      <div style="font-family: 'Chakra Petch', sans-serif; font-size: 11px; color: var(--text-muted);">{escape(cfg['subtitle'])}</div>
       <div class="target-rate">{data['success_rate']}%</div>
       <div class="target-detail">
         {'<br>'.join(detail_lines)}
@@ -313,8 +412,8 @@ def gen_finding_cards(findings: list[dict]) -> str:
     """Generate detailed finding cards for successful attacks."""
     if not findings:
         return """    <div style="padding: 40px; text-align: center; border: 1px dashed var(--green-dim); color: var(--green);">
-      <div style="font-family: 'Orbitron', sans-serif; font-size: 16px; letter-spacing: 3px;">ALL ATTACKS BLOCKED</div>
-      <div style="font-family: 'Share Tech Mono', monospace; font-size: 12px; color: var(--text-dim); margin-top: 8px;">No successful bypasses detected in this test session.</div>
+      <div style="font-family: 'Chakra Petch', sans-serif; font-size: 16px; letter-spacing: 3px;">ALL ATTACKS BLOCKED</div>
+      <div style="font-family: 'Chakra Petch', sans-serif; font-size: 12px; color: var(--text-dim); margin-top: 8px;">No successful bypasses detected in this test session.</div>
     </div>"""
     
     cards = []
@@ -322,8 +421,8 @@ def gen_finding_cards(findings: list[dict]) -> str:
         tech_id = escape(r.get("technique_id", "???"))
         tech_name = escape(r.get("technique_name", "Unknown"))
         target = r.get("target", "unknown")
-        target_cls = "azure" if "azure" in target else "claude"
-        target_label = target.upper().replace("-", "-")
+        target_cls = _target_css_class(target)
+        target_label = target.upper()
         category = r.get("category", "unknown")
         severity = r.get("severity", "unknown").lower()
         sev_color = SEVERITY_COLORS.get(severity, "var(--text-dim)")
@@ -354,18 +453,23 @@ def gen_finding_cards(findings: list[dict]) -> str:
             else:
                 reasoning = notes
         reasoning_text = escape(reasoning)
-        
+        timestamp = fmt_ts(r.get("timestamp", ""))
+
         cards.append(f"""    <div class="finding-card">
+      <div class="finding-badges">
+        <span class="finding-hit">HIT</span>
+        <span class="finding-target {target_cls}">{escape(target_label)}</span>
+      </div>
       <div class="finding-header">
         <div class="finding-id">{tech_id}</div>
         <div class="finding-name">{tech_name}</div>
-        <div class="finding-target {target_cls}">{escape(target_label)}</div>
       </div>
       <div class="finding-meta">
         <span>CATEGORY: {escape(category)}</span>
         <span>SEVERITY: <span style="color: {sev_color};">{severity.upper()}</span></span>
         <span>IMPACT: {impact}/100</span>
         <span>CONFIDENCE: {confidence}</span>
+        <span class="finding-time">🕒 {timestamp}</span>
       </div>
       <div class="finding-prompt">
         <div class="finding-prompt-label">ATTACK PROMPT</div>
@@ -402,9 +506,12 @@ def gen_table_data(results: list[dict]) -> str:
         # If this one has error but we haven't seen a clean one, keep it
         if not has_judge_error:
             seen.add(key)
-        
+
         clean_results.append(r)
-    
+
+    # Newest first so the most recent run leads the log.
+    clean_results.sort(key=lambda r: r.get("timestamp", ""), reverse=True)
+
     # Build JS objects
     entries = []
     for r in clean_results:
@@ -418,25 +525,241 @@ def gen_table_data(results: list[dict]) -> str:
         target = r.get("target", "unknown")
         success = "true" if r.get("success", False) else "false"
         impact = r.get("impact_score", 0)
-        
+        time = fmt_ts(r.get("timestamp", ""))
+
         # Confidence
         jv = r.get("judge_verdict", {})
         conf = jv.get("confidence", 0.0) if isinstance(jv, dict) else 0.0
-        
+
         # Filtered?
         resp = r.get("response", "")
         filtered = "true" if ("[CONTENT_FILTERED]" in resp or "content_filter" in resp) else "false"
-        
+
         entries.append(
             f'  {{ tech: "{tech_id}", name: "{escape(name)}", cat: "{cat}", '
             f'sev: "{sev}", target: "{target}", success: {success}, '
-            f'impact: {impact}, conf: {conf}, filtered: {filtered} }}'
+            f'impact: {impact}, conf: {conf}, filtered: {filtered}, '
+            f'time: "{escape(time)}" }}'
         )
-    
+
     return "[\n" + ",\n".join(entries) + "\n]"
 
 
 # ── HTML Template ─────────────────────────────────────────────────────────────
+
+def gen_framework_section(results: list) -> str:
+    """Render OWASP/MITRE ATLAS coverage + actionable remediation (Strix-style)."""
+    from attack_taxonomy import framework_coverage, OWASP_LLM_2025
+    from remediation import remediations_for_findings
+
+    cov = framework_coverage()
+    owasp, atlas = cov["owasp_llm_2025"], cov["mitre_atlas"]
+
+    owasp_chips = "".join(
+        f'<span style="display:inline-block;margin:3px;padding:4px 10px;'
+        f'border:1px solid var(--cyan-dim);border-radius:4px;color:var(--cyan);'
+        f'font-size:12px">{oid} · {OWASP_LLM_2025.get(oid, "")}</span>'
+        for oid in owasp["covered"]
+    )
+    atlas_chips = "".join(
+        f'<span style="display:inline-block;margin:3px;padding:4px 10px;'
+        f'border:1px solid var(--red-dim);border-radius:4px;color:var(--red);'
+        f'font-size:12px">{aid}</span>'
+        for aid in atlas["covered"]
+    )
+
+    rem = remediations_for_findings(results)
+    if rem:
+        rem_blocks = "".join(
+            f'<div style="margin:12px 0;padding:14px;background:var(--bg-card);'
+            f'border-left:3px solid var(--orange)">'
+            f'<div style="color:var(--orange);font-weight:700">{item["owasp"]} &#8212; '
+            f'{item["owasp_name"]} <span style="color:#889">({item["finding_count"]} '
+            f'finding(s): {", ".join(item["affected_techniques"])})</span></div>'
+            f'<div style="margin:6px 0;color:#aab">{item["summary"]}</div>'
+            f'<ul style="margin:6px 0 0 18px;color:#9ab">'
+            + "".join(f"<li>{c}</li>" for c in item["controls"])
+            + "</ul></div>"
+            for item in rem
+        )
+    else:
+        rem_blocks = ('<div style="color:var(--green)">No successful findings '
+                      '&#8212; nothing to remediate. &#10003;</div>')
+
+    return f'''
+  <!-- FRAMEWORK COVERAGE & REMEDIATION -->
+  <div class="section-title animate delay-5">FRAMEWORK COVERAGE &#38; REMEDIATION</div>
+  <div class="animate delay-5" style="padding:16px;background:var(--bg-secondary);border:1px solid var(--cyan-dim);border-radius:8px;margin-bottom:20px">
+    <div style="color:#889;font-size:13px;margin-bottom:6px">OWASP Top 10 for LLM Applications (2025) &#8212; {owasp["covered_count"]}/{owasp["total"]} categories exercised</div>
+    <div>{owasp_chips}</div>
+    <div style="color:#889;font-size:13px;margin:14px 0 6px">MITRE ATLAS &#8212; {atlas["covered_count"]} techniques</div>
+    <div>{atlas_chips}</div>
+    <div style="color:#889;font-size:13px;margin:18px 0 6px">Actionable Remediation (successful findings)</div>
+    {rem_blocks}
+  </div>
+'''
+
+
+# CSS for the evaluation scorecard + purple-team defense section. Kept as a
+# plain string (single braces) and injected as a value, so it doesn't fight the
+# main template's f-string brace escaping.
+EVAL_CSS = """
+.scorecard {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 32px;
+  background: linear-gradient(135deg, var(--bg-card) 0%, var(--bg-secondary) 100%);
+  border: 1px solid var(--border);
+  padding: 36px;
+  margin-bottom: 48px;
+  position: relative;
+  overflow: hidden;
+}
+.scorecard::before {
+  content: '';
+  position: absolute; top: 0; left: 0; width: 100%; height: 3px;
+  background: linear-gradient(90deg, var(--cyan), transparent);
+}
+.score-block { text-align: center; border-right: 1px solid var(--border); padding-right: 24px; }
+.score-grade { font-family: 'Audiowide', sans-serif; font-size: 92px; line-height: 1; margin-bottom: 6px; }
+.score-num { font-family: 'Chakra Petch', sans-serif; font-size: 30px; font-weight: 700; }
+.score-caption { font-family: 'Chakra Petch', sans-serif; font-size: 11px; letter-spacing: 2px; color: var(--text-dim); text-transform: uppercase; margin-top: 10px; }
+.eval-right { display: flex; flex-direction: column; gap: 20px; justify-content: center; }
+.verdict { font-family: 'Rajdhani', sans-serif; font-size: 19px; color: var(--text-primary); line-height: 1.55; }
+.eval-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; }
+.eval-metric { background: #06060c; border: 1px solid var(--border); padding: 14px 16px; }
+.eval-metric .l { font-family: 'Chakra Petch', sans-serif; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-dim); margin-bottom: 6px; }
+.eval-metric .v { font-family: 'Chakra Petch', sans-serif; font-size: 24px; font-weight: 700; }
+@media (max-width: 760px) {
+  .scorecard { grid-template-columns: 1fr; }
+  .score-block { border-right: none; border-bottom: 1px solid var(--border); padding-right: 0; padding-bottom: 20px; }
+}
+.defense-bars { display: flex; flex-direction: column; gap: 14px; margin-bottom: 20px; }
+.defense-row { display: flex; align-items: center; gap: 16px; }
+.defense-label { min-width: 190px; text-align: right; font-family: 'Chakra Petch', sans-serif; font-size: 12px; color: var(--text-dim); text-transform: uppercase; }
+.defense-track { flex: 1; height: 26px; background: #0a0a14; border: 1px solid var(--border); position: relative; overflow: hidden; }
+.defense-fill { height: 100%; background: linear-gradient(90deg, var(--green), #00cc66); box-shadow: 0 0 14px var(--green-dim); }
+.defense-grade { min-width: 46px; font-family: 'Audiowide', sans-serif; font-size: 16px; text-align: center; }
+.defense-pct { min-width: 110px; font-family: 'Chakra Petch', sans-serif; font-size: 12px; color: var(--text-dim); }
+.guardrail-uplift { padding: 20px 24px; background: linear-gradient(135deg, #1a1206, var(--bg-card)); border: 1px solid #ffab2e44; border-left: 3px solid #ffab2e; }
+.guardrail-uplift .big { font-family: 'Audiowide', sans-serif; font-size: 36px; color: #ffab2e; }
+"""
+
+
+def _grade_color(grade: str) -> str:
+    if grade in ("A+", "A", "A-"):
+        return "var(--green)"
+    if grade in ("B+", "B", "B-", "C+", "C", "C-"):
+        return "var(--yellow)"
+    return "var(--red)"
+
+
+def _gen_verdict(stats: dict) -> str:
+    """One-sentence executive verdict tuned to the results."""
+    score = stats["posture_score"]
+    crit, high = stats["crit_breaches"], stats["high_breaches"]
+    lead = (f"Evaluated <strong>{stats['num_techniques']}</strong> techniques across "
+            f"<strong>{stats['num_targets']}</strong> target(s). ")
+    if crit > 0:
+        if score >= 90:
+            return lead + (f"Strong overall posture, but <strong style='color:var(--red)'>"
+                           f"{crit} critical bypass(es)</strong> on record demand attention.")
+        return lead + (f"<strong style='color:var(--red)'>{crit} critical bypass(es)</strong> "
+                       "detected &#8212; immediate remediation required.")
+    if high > 0:
+        return lead + ("No critical breaches, but <strong style='color:var(--orange)'>"
+                       f"{high} high-severity</strong> vector(s) succeeded &#8212; prioritize hardening.")
+    if score >= 90:
+        return lead + ("High- and critical-severity vectors "
+                       "<strong style='color:var(--green)'>held across the board</strong>.")
+    return lead + "Only lower-severity vectors succeeded; review the medium findings below."
+
+
+def gen_scorecard(stats: dict) -> str:
+    """Flagship hero: defense-weighted posture score, grade, verdict, key metrics."""
+    score, grade = stats["posture_score"], stats["grade"]
+    gc = _grade_color(grade)
+    cov = stats.get("coverage") or {}
+    owasp = cov.get("owasp_llm_2025", {})
+    atlas = cov.get("mitre_atlas", {})
+    owasp_str = f'{owasp.get("covered_count", "-")}/{owasp.get("total", "-")}'
+    atlas_str = str(atlas.get("covered_count", "-"))
+    crit = stats["crit_breaches"]
+    crit_color = "var(--red)" if crit > 0 else "var(--green)"
+
+    uplift = stats["guardrail_uplift"]
+    uplift_metric = ""
+    if uplift is not None:
+        uc = "var(--green)" if uplift > 0 else "var(--red)"
+        sign = "+" if uplift >= 0 else ""
+        uplift_metric = (f'<div class="eval-metric"><div class="l">Guardrail Uplift</div>'
+                         f'<div class="v" style="color:{uc}">{sign}{uplift}%</div></div>')
+
+    return f'''
+  <!-- SECURITY POSTURE SCORECARD -->
+  <div class="section-title animate delay-2">SECURITY POSTURE &#8212; EVALUATION</div>
+  <div class="scorecard animate delay-2">
+    <div class="score-block">
+      <div class="score-grade" style="color:{gc}">{grade}</div>
+      <div class="score-num" style="color:{gc}">{score}<span style="font-size:16px;color:var(--text-dim)">/100</span></div>
+      <div class="score-caption">Defense-Weighted Posture</div>
+    </div>
+    <div class="eval-right">
+      <div class="verdict">{_gen_verdict(stats)}</div>
+      <div class="eval-metrics">
+        <div class="eval-metric"><div class="l">Defense Effectiveness</div><div class="v" style="color:var(--cyan)">{stats["defense_rate"]}%</div></div>
+        <div class="eval-metric"><div class="l">Critical Exposure</div><div class="v" style="color:{crit_color}">{crit}</div></div>
+        {uplift_metric}
+        <div class="eval-metric"><div class="l">OWASP LLM Coverage</div><div class="v" style="color:var(--cyan)">{owasp_str}</div></div>
+        <div class="eval-metric"><div class="l">ATLAS Techniques</div><div class="v" style="color:var(--cyan)">{atlas_str}</div></div>
+      </div>
+    </div>
+  </div>
+'''
+
+
+def gen_defense_section(stats: dict) -> str:
+    """Purple-team view: per-target defense effectiveness + guardrail A/B uplift."""
+    by_target = stats["by_target"]
+    rows = []
+    for tid, d in sorted(by_target.items(), key=lambda kv: kv[1]["defense_rate"], reverse=True):
+        cfg = TARGET_CONFIG.get(tid, {"name": tid.upper()})
+        grade = d["grade"]
+        rows.append(f'''      <div class="defense-row">
+        <div class="defense-label">{escape(cfg["name"])}</div>
+        <div class="defense-track"><div class="defense-fill" style="width:{d["defense_rate"]}%"></div></div>
+        <div class="defense-grade" style="color:{_grade_color(grade)}">{grade}</div>
+        <div class="defense-pct">{d["defense_rate"]}% blocked ({d["blocked"]}/{d["total"]})</div>
+      </div>''')
+    bars = "\n".join(rows)
+
+    uplift_html = ""
+    if stats["guardrail_uplift"] is not None:
+        u = stats["guardrail_uplift"]
+        raw = by_target.get("bedrock", {}).get("defense_rate")
+        guarded = by_target.get("bedrock-guardrails", {}).get("defense_rate")
+        sign = "+" if u >= 0 else ""
+        uplift_html = f'''    <div class="guardrail-uplift">
+      <div style="font-family:'Chakra Petch',sans-serif;font-size:11px;letter-spacing:2px;color:var(--text-dim);text-transform:uppercase">Purple-Team A/B &#8212; Guardrail Layer Impact</div>
+      <div style="display:flex;align-items:baseline;gap:18px;margin-top:10px;flex-wrap:wrap">
+        <div class="big">{sign}{u}%</div>
+        <div style="font-family:'Rajdhani',sans-serif;font-size:16px;color:var(--text-dim);line-height:1.5">
+          Bedrock Guardrails raised the block rate from <strong style="color:var(--text-primary)">{raw}%</strong> (raw model) to <strong style="color:var(--text-primary)">{guarded}%</strong> &#8212; quantified defense value of the policy layer.
+        </div>
+      </div>
+    </div>'''
+
+    return f'''
+  <!-- PURPLE TEAM: DEFENSE EFFECTIVENESS -->
+  <div class="section-title animate delay-4">DEFENSE EFFECTIVENESS &#8212; PURPLE TEAM</div>
+  <div class="panel animate delay-4">
+    <div class="defense-bars">
+{bars}
+    </div>
+{uplift_html}
+  </div>
+'''
+
 
 def generate_html(stats: dict, results: list[dict]) -> str:
     """Generate the complete dashboard HTML."""
@@ -448,13 +771,22 @@ def generate_html(stats: dict, results: list[dict]) -> str:
     key_insight = gen_key_insight(stats["by_severity"])
     target_boxes = gen_target_boxes(stats["by_target"])
     finding_cards = gen_finding_cards(stats["findings"])
+    framework_section = gen_framework_section(results)
+    scorecard = gen_scorecard(stats)
+    defense_section = gen_defense_section(stats)
     table_data = gen_table_data(results)
-    
+
+    # Timestamps for the header
+    generated = stats.get("generated_at", now)
+    first_run = fmt_ts(stats["first_test"], with_time=False)
+    last_run = fmt_ts(stats["last_test"])
+
     # Multi-turn chain processing
     chain_results = extract_chain_results(results)
     chain_stats = compute_chain_stats(chain_results)
     chain_section = gen_chain_section(chain_stats, chain_results)
     chain_css = CHAIN_CSS if chain_stats.get("has_chains") else ""
+    eval_css = EVAL_CSS
     
     return f'''<!DOCTYPE html>
 <html lang="en">
@@ -462,7 +794,7 @@ def generate_html(stats: dict, results: list[dict]) -> str:
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>RED TEAM &#8212; Attack Simulator Report</title>
-<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Audiowide&family=Chakra+Petch:wght@400;600;700&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root {{
   --bg-primary: #0a0a0f;
@@ -480,9 +812,9 @@ def generate_html(stats: dict, results: list[dict]) -> str:
   --yellow: #ffcc00;
   --yellow-dim: #ffcc0044;
   --orange: #ff8800;
-  --text-primary: #e0e4f0;
-  --text-dim: #6a7094;
-  --text-muted: #3a3f5c;
+  --text-primary: #eef1fa;
+  --text-dim: #a6accf;
+  --text-muted: #7a80a8;
   --border: #1e2038;
   --border-glow: #00f0ff15;
   --scanline: rgba(0, 240, 255, 0.03);
@@ -549,7 +881,7 @@ body::before {{
   padding: 6px 18px;
   border: 1px solid var(--red);
   color: var(--red);
-  font-family: 'Share Tech Mono', monospace;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 11px;
   letter-spacing: 4px;
   text-transform: uppercase;
@@ -568,7 +900,7 @@ body::before {{
 }}
 
 .header h1 {{
-  font-family: 'Orbitron', sans-serif;
+  font-family: 'Audiowide', sans-serif;
   font-weight: 900;
   font-size: clamp(42px, 6vw, 72px);
   letter-spacing: 6px;
@@ -586,7 +918,7 @@ body::before {{
 }}
 
 .header-sub {{
-  font-family: 'Share Tech Mono', monospace;
+  font-family: 'Chakra Petch', sans-serif;
   color: var(--text-dim);
   font-size: 14px;
   letter-spacing: 3px;
@@ -594,7 +926,7 @@ body::before {{
 
 .header-meta {{
   margin-top: 16px;
-  font-family: 'Share Tech Mono', monospace;
+  font-family: 'Chakra Petch', sans-serif;
   color: var(--text-muted);
   font-size: 12px;
   letter-spacing: 1px;
@@ -612,7 +944,7 @@ body::before {{
 }}
 
 .session-item {{
-  font-family: 'Share Tech Mono', monospace;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 11px;
   color: var(--text-muted);
   letter-spacing: 1px;
@@ -669,7 +1001,7 @@ body::before {{
 .stats-grid .stat-card:nth-child(6) {{ animation-delay: 1.05s; }}
 
 .stat-label {{
-  font-family: 'Share Tech Mono', monospace;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 11px;
   letter-spacing: 2px;
   text-transform: uppercase;
@@ -678,7 +1010,7 @@ body::before {{
 }}
 
 .stat-value {{
-  font-family: 'Orbitron', sans-serif;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 36px;
   font-weight: 700;
   color: var(--cyan);
@@ -689,7 +1021,7 @@ body::before {{
 .stat-card.warning .stat-value {{ color: var(--yellow); }}
 
 .stat-detail {{
-  font-family: 'Share Tech Mono', monospace;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 11px;
   color: var(--text-muted);
   margin-top: 4px;
@@ -697,7 +1029,7 @@ body::before {{
 
 /* === SECTION TITLES === */
 .section-title {{
-  font-family: 'Orbitron', sans-serif;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 18px;
   font-weight: 700;
   letter-spacing: 4px;
@@ -713,7 +1045,7 @@ body::before {{
 .section-title::before {{
   content: '//';
   color: var(--text-muted);
-  font-family: 'Share Tech Mono', monospace;
+  font-family: 'Chakra Petch', sans-serif;
 }}
 
 /* === LAYOUT === */
@@ -738,8 +1070,9 @@ body::before {{
 
 /* === TARGET COMPARISON === */
 .target-comparison {{
-  display: flex;
-  gap: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 12px;
   margin-bottom: 48px;
 }}
 
@@ -754,7 +1087,6 @@ body::before {{
 .target-box.azure {{
   background: linear-gradient(135deg, #0a1628 0%, var(--bg-card) 100%);
   border: 1px solid #1a3a6a44;
-  border-right: none;
 }}
 
 .target-box.claude {{
@@ -762,11 +1094,23 @@ body::before {{
   border: 1px solid #6a1a4a44;
 }}
 
+.target-box.bedrock {{
+  background: linear-gradient(135deg, #1a1206 0%, var(--bg-card) 100%);
+  border: 1px solid #ffab2e44;
+}}
+
+.target-box.bedrock-guardrails {{
+  background: linear-gradient(135deg, #140d04 0%, var(--bg-card) 100%);
+  border: 1px solid #d97a1a44;
+}}
+
 .target-box.azure.visible {{ animation: fadeInLeft 0.7s ease forwards; }}
 .target-box.claude.visible {{ animation: fadeInRight 0.7s ease forwards 0.2s; }}
+.target-box.bedrock.visible {{ animation: fadeInLeft 0.7s ease forwards 0.1s; }}
+.target-box.bedrock-guardrails.visible {{ animation: fadeInRight 0.7s ease forwards 0.3s; }}
 
 .target-name {{
-  font-family: 'Orbitron', sans-serif;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 14px;
   font-weight: 700;
   letter-spacing: 3px;
@@ -775,9 +1119,11 @@ body::before {{
 
 .target-box.azure .target-name {{ color: #4488ff; }}
 .target-box.claude .target-name {{ color: #cc88ff; }}
+.target-box.bedrock .target-name {{ color: #ffab2e; }}
+.target-box.bedrock-guardrails .target-name {{ color: #d97a1a; }}
 
 .target-rate {{
-  font-family: 'Orbitron', sans-serif;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 48px;
   font-weight: 900;
   margin: 16px 0;
@@ -785,9 +1131,11 @@ body::before {{
 
 .target-box.azure .target-rate {{ color: #4488ff; }}
 .target-box.claude .target-rate {{ color: #cc88ff; }}
+.target-box.bedrock .target-rate {{ color: #ffab2e; }}
+.target-box.bedrock-guardrails .target-rate {{ color: #d97a1a; }}
 
 .target-detail {{
-  font-family: 'Share Tech Mono', monospace;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 12px;
   color: var(--text-dim);
   line-height: 1.8;
@@ -809,7 +1157,7 @@ body::before {{
 .bar-row {{ display: flex; align-items: center; gap: 16px; }}
 
 .bar-label {{
-  font-family: 'Share Tech Mono', monospace;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 12px;
   letter-spacing: 1px;
   color: var(--text-dim);
@@ -858,7 +1206,7 @@ body::before {{
 }}
 
 .bar-value {{
-  font-family: 'Orbitron', sans-serif;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 13px;
   font-weight: 700;
   min-width: 55px;
@@ -866,7 +1214,7 @@ body::before {{
 }}
 
 .bar-extra {{
-  font-family: 'Share Tech Mono', monospace;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 11px;
   color: var(--text-muted);
   min-width: 70px;
@@ -904,7 +1252,7 @@ body::before {{
 }}
 
 .severity-name {{
-  font-family: 'Share Tech Mono', monospace;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 11px;
   letter-spacing: 2px;
   text-transform: uppercase;
@@ -915,7 +1263,7 @@ body::before {{
 .severity-cell.breached .severity-name {{ color: var(--red); }}
 
 .severity-hits {{
-  font-family: 'Orbitron', sans-serif;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 28px;
   font-weight: 700;
 }}
@@ -924,7 +1272,7 @@ body::before {{
 .severity-cell.breached .severity-hits {{ color: var(--red); }}
 
 .severity-total {{
-  font-family: 'Share Tech Mono', monospace;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 11px;
   color: var(--text-muted);
   margin-top: 4px;
@@ -943,11 +1291,18 @@ body::before {{
   overflow: hidden;
 }}
 
-.finding-card::before {{
-  content: 'HIT';
+.finding-badges {{
   position: absolute;
-  top: 8px; right: 16px;
-  font-family: 'Orbitron', sans-serif;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  z-index: 2;
+}}
+
+.finding-hit {{
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 11px;
   font-weight: 700;
   color: var(--red);
@@ -972,7 +1327,7 @@ body::before {{
 }}
 
 .finding-header {{
-  padding-right: 140px;
+  padding-right: 150px;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -980,7 +1335,7 @@ body::before {{
 }}
 
 .finding-id {{
-  font-family: 'Share Tech Mono', monospace;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 13px;
   color: var(--cyan);
   padding: 2px 8px;
@@ -995,19 +1350,17 @@ body::before {{
 }}
 
 .finding-target {{
-  position: absolute;
-  top: 32px;
-  right: 16px;
-  font-family: 'Share Tech Mono', monospace;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 11px;
   letter-spacing: 1px;
   padding: 2px 8px;
   border: 1px solid;
-  margin-left: auto;
 }}
 
 .finding-target.azure {{ color: #4488ff; border-color: #4488ff44; }}
 .finding-target.claude {{ color: #cc88ff; border-color: #cc88ff44; }}
+.finding-target.bedrock {{ color: #ffab2e; border-color: #ffab2e44; }}
+.finding-target.bedrock-guardrails {{ color: #d97a1a; border-color: #d97a1a44; }}
 
 .finding-meta {{
   display: flex;
@@ -1017,7 +1370,7 @@ body::before {{
 }}
 
 .finding-meta span {{
-  font-family: 'Share Tech Mono', monospace;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 11px;
   color: var(--text-dim);
   letter-spacing: 1px;
@@ -1026,7 +1379,7 @@ body::before {{
 .finding-prompt, .finding-response {{ margin-bottom: 12px; }}
 
 .finding-prompt-label, .finding-response-label {{
-  font-family: 'Share Tech Mono', monospace;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 10px;
   letter-spacing: 2px;
   text-transform: uppercase;
@@ -1035,7 +1388,7 @@ body::before {{
 }}
 
 .finding-prompt-text, .finding-response-text {{
-  font-family: 'Share Tech Mono', monospace;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 12px;
   line-height: 1.7;
   padding: 12px 16px;
@@ -1063,7 +1416,7 @@ body::before {{
 
 .finding-reasoning strong {{
   color: var(--red);
-  font-family: 'Share Tech Mono', monospace;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 11px;
   letter-spacing: 1px;
 }}
@@ -1074,7 +1427,7 @@ body::before {{
 .log-table {{
   width: 100%;
   border-collapse: collapse;
-  font-family: 'Share Tech Mono', monospace;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 12px;
 }}
 
@@ -1133,14 +1486,14 @@ body::before {{
 }}
 
 .footer-text {{
-  font-family: 'Share Tech Mono', monospace;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 11px;
   color: var(--text-muted);
   letter-spacing: 2px;
 }}
 
 .footer-brand {{
-  font-family: 'Orbitron', sans-serif;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 12px;
   color: var(--cyan-dim);
   letter-spacing: 4px;
@@ -1226,6 +1579,7 @@ body::before {{
 ::-webkit-scrollbar-thumb:hover {{ background: var(--text-muted); }}
 
 {chain_css}
+{eval_css}
 </style>
 </head>
 <body>
@@ -1237,15 +1591,16 @@ body::before {{
     <div class="badge">CLASSIFIED // AUTHORIZED RED TEAM ENGAGEMENT</div>
     <h1>RED TEAM</h1>
     <div class="header-sub">LLM ATTACK SIMULATOR v1.0 &#8212; ASSESSMENT REPORT</div>
-    <div class="header-meta">GENERATED {now} &nbsp;|&nbsp; OPERATOR: JACE &nbsp;|&nbsp; FRAMEWORK: MITRE ATLAS</div>
+    <div class="header-meta">REPORT GENERATED {generated} &nbsp;|&nbsp; OPERATOR: JACE &nbsp;|&nbsp; FRAMEWORKS: OWASP LLM TOP 10 (2025) · MITRE ATLAS</div>
     <div class="session-banner">
       <div class="session-item">TEST SESSIONS: <strong>{stats['num_sessions']}</strong></div>
-      <div class="session-item">FIRST RUN: <strong>{stats['first_test'][:10] if stats['first_test'] != 'N/A' else 'N/A'}</strong></div>
-      <div class="session-item">LAST UPDATED: <strong>{stats['last_test'][:10] if stats['last_test'] != 'N/A' else 'N/A'}</strong></div>
+      <div class="session-item">FIRST RUN: <strong>{first_run}</strong></div>
+      <div class="session-item">LATEST RUN: <strong>{last_run}</strong></div>
       <div class="session-item">TECHNIQUES: <strong>{stats['num_techniques']}</strong></div>
       <div class="session-item">TARGETS: <strong>{stats['num_targets']}</strong></div>
     </div>
   </header>
+{scorecard}
 
   <!-- SUMMARY STATS -->
   <div class="stats-grid animate delay-2">
@@ -1286,6 +1641,7 @@ body::before {{
   <div class="target-comparison animate delay-3">
 {target_boxes}
   </div>
+{defense_section}
 
   <!-- CATEGORY BREAKDOWN + SEVERITY -->
   <div class="two-col animate delay-4">
@@ -1303,7 +1659,7 @@ body::before {{
       </div>
 
       <div style="margin-top: 28px; padding: 16px; background: #06060c; border: 1px solid var(--border);">
-        <div style="font-family: 'Share Tech Mono', monospace; font-size: 10px; letter-spacing: 2px; color: var(--text-muted); margin-bottom: 10px;">KEY INSIGHT</div>
+        <div style="font-family: 'Chakra Petch', sans-serif; font-size: 10px; letter-spacing: 2px; color: var(--text-muted); margin-bottom: 10px;">KEY INSIGHT</div>
         <div style="font-family: 'Rajdhani', sans-serif; font-size: 14px; color: var(--text-dim); line-height: 1.6;">
           {key_insight}
         </div>
@@ -1319,6 +1675,7 @@ body::before {{
   <div class="findings animate delay-5">
 {finding_cards}
   </div>
+{framework_section}
 
   <!-- FULL ATTACK LOG -->
   <div class="section-title animate delay-6">COMPLETE ATTACK LOG</div>
@@ -1334,6 +1691,7 @@ body::before {{
           <th>Result</th>
           <th>Impact</th>
           <th>Confidence</th>
+          <th>Time (UTC)</th>
         </tr>
       </thead>
       <tbody id="logBody"></tbody>
@@ -1359,7 +1717,9 @@ results.forEach((r, i) => {{
                     r.filtered ? '<span class="tag filtered">FILTERED</span>' : 
                     '<span class="tag blocked">BLOCKED</span>';
   const sevTag = `<span class="tag sev-${{r.sev}}">${{r.sev.toUpperCase()}}</span>`;
-  const targetColor = r.target.includes('azure') ? '#4488ff' : '#cc88ff';
+  const targetColor = r.target.includes('guardrail') ? '#d97a1a' :
+                      r.target.includes('bedrock') ? '#ffab2e' :
+                      r.target.includes('azure') ? '#4488ff' : '#cc88ff';
 
   row.innerHTML = `
     <td style="color: var(--text-muted);">${{i + 1}}</td>
@@ -1368,8 +1728,9 @@ results.forEach((r, i) => {{
     <td>${{sevTag}}</td>
     <td style="color: ${{targetColor}};">${{r.target}}</td>
     <td>${{resultTag}}</td>
-    <td style="color: ${{r.impact > 0 ? 'var(--red)' : 'var(--text-muted)'}}; font-family: 'Orbitron', sans-serif; font-size: 11px;">${{r.impact}}/100</td>
-    <td style="color: var(--text-muted);">${{r.conf}}</td>
+    <td style="color: ${{r.impact > 0 ? 'var(--red)' : 'var(--text-muted)'}}; font-family: 'Chakra Petch', sans-serif; font-size: 11px;">${{r.impact}}/100</td>
+    <td style="color: var(--text-dim);">${{r.conf}}</td>
+    <td style="color: var(--text-dim); white-space: nowrap;">${{r.time.replace(' UTC','')}}</td>
   `;
   tbody.appendChild(row);
 }});
@@ -1500,37 +1861,57 @@ def main():
     parser.add_argument(
         "-o", "--output-dir",
         default=".",
-        help="Output directory for dashboard.html (default: current directory)"
+        help="Output directory for index.html (default: current directory)"
     )
     args = parser.parse_args()
-    
-    print(f"[*] Loading results from: {args.input}")
-    results = load_results(args.input)
+    # Opened by a human from the CLI → auto-open the freshly written file.
+    build_dashboard(args.input, args.output_dir, github_pages_tip=True, open_browser=True)
+
+
+def build_dashboard(input_path: str = "results/attack_log.json",
+                    output_dir: str = ".", github_pages_tip: bool = False,
+                    open_browser: bool = False) -> str:
+    """Build the dashboard HTML from a log file. Safe to call in-process — takes
+    explicit paths and never touches sys.argv (so it won't collide with a caller's
+    argparse). With ``open_browser`` (CLI use), opens the written file so you never
+    mistake a stale dashboard for a fresh one. Returns the written output path."""
+    print(f"[*] Loading results from: {input_path}")
+    results = load_results(input_path)
     print(f"[*] Loaded {len(results)} attack results")
-    
+
     print("[*] Computing statistics...")
     stats = compute_stats(results)
     print(f"    Total: {stats['total']} | Hits: {stats['hits']} | Rate: {stats['success_rate']}%")
     print(f"    Targets: {stats['num_targets']} | Techniques: {stats['num_techniques']} | Sessions: {stats['num_sessions']}")
-    
+
     print("[*] Generating dashboard HTML...")
     html = generate_html(stats, results)
-    
-    os.makedirs(args.output_dir, exist_ok=True)
-    output_path = os.path.join(args.output_dir, "index.html")
-    
+
+    os.makedirs(output_dir, exist_ok=True)
+    output_path = os.path.join(output_dir, "index.html")
+
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(html)
-    
+
+    abs_path = os.path.abspath(output_path)
     size_kb = os.path.getsize(output_path) / 1024
-    print(f"[+] Dashboard generated: {output_path} ({size_kb:.1f} KB)")
+    print(f"[+] Dashboard generated: {abs_path} ({size_kb:.1f} KB)")
     print(f"[+] Open in browser or push to GitHub Pages!")
-    
-    # Tip for GitHub Pages
-    if args.output_dir != "docs":
+
+    if open_browser:
+        # Auto-open the exact file just written so a stale copy is never mistaken
+        # for fresh output. Never fatal (headless/no-display environments).
+        try:
+            webbrowser.open(f"file://{abs_path}")
+        except Exception as e:
+            print(f"[!] Could not auto-open browser: {e}")
+
+    if github_pages_tip and output_dir != "docs":
         print(f"\n[TIP] For GitHub Pages, run:")
         print(f"      python generate_dashboard.py -o docs/")
         print(f"      Then enable GitHub Pages from 'docs/' folder in repo settings.")
+
+    return output_path
 
 
 if __name__ == "__main__":

@@ -1,0 +1,5 @@
+[tool.pytest.ini_options]
+# Repo root on the path so tests can import top-level modules (utils, config, ...).
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-q"

@@ -27,27 +27,54 @@ on:
         required: false
         default: 'azure-openai claude'
         type: string
+      verify:
+        description: 'Verify findings (weed out false positives before alerting)'
+        required: false
+        default: true
+        type: boolean
 
 jobs:
-  red-team-scan:
+  # Fast offline gate — must pass before any credentialed scan runs.
+  test:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
-    
+    timeout-minutes: 10
     steps:
       - name: 🔧 Checkout Repository
         uses: actions/checkout@v4
-      
+
       - name: 🐍 Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
-      
+
+      - name: 📦 Install Dev Dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: ✅ Run Test Suite
+        run: pytest
+
+  red-team-scan:
+    needs: test          # gate: don't burn API credits if tests fail
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: 🔧 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
       - name: 📦 Install Dependencies
         run: |
           pip install --upgrade pip
-          pip install python-dotenv anthropic openai azure-search-documents
-          pip install langchain langgraph langchain-anthropic langchain-openai
+          pip install -r requirements.txt
       
       - name: ⚙️ Setup Environment
         env:
@@ -69,21 +96,28 @@ jobs:
           MODE: ${{ github.event.inputs.mode || 'full' }}
           CATEGORY: ${{ github.event.inputs.category || '' }}
           TARGETS: ${{ github.event.inputs.targets || 'azure-openai claude' }}
+          VERIFY: ${{ github.event.inputs.verify }}
         run: |
           echo "🔥 RED TEAM ATTACK SIMULATOR - AUTOMATED RUN"
           echo "================================================"
           echo "Mode: $MODE"
           echo "Targets: $TARGETS"
           echo "Triggered by: ${{ github.event_name }}"
+
+          # Verify by default (scheduled runs have no input); disable only when
+          # a manual dispatch explicitly sets verify=false.
+          VERIFY_FLAG="--verify"
+          if [ "$VERIFY" = "false" ]; then VERIFY_FLAG=""; fi
+          echo "Verify: ${VERIFY_FLAG:-disabled}"
           echo ""
-          
-          # Build command based on mode
+
+          # Build command based on mode (chains ignores --verify internally)
           if [ "$MODE" = "category" ] && [ -n "$CATEGORY" ]; then
-            python automated_run.py --mode category --category "$CATEGORY" --targets $TARGETS
+            python automated_run.py --mode category --category "$CATEGORY" --targets $TARGETS $VERIFY_FLAG
           elif [ "$MODE" = "chains" ]; then
             python automated_run.py --mode chains --targets $TARGETS
           else
-            python automated_run.py --mode "$MODE" --targets $TARGETS
+            python automated_run.py --mode "$MODE" --targets $TARGETS $VERIFY_FLAG
           fi
           
           # Capture exit code for notifications

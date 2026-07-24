@@ -506,7 +506,7 @@ CHAIN_CSS = """
 
 .chain-stat-label {
   display: block;
-  font-family: 'Share Tech Mono', monospace;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 10px;
   letter-spacing: 2px;
   color: var(--text-muted);
@@ -515,7 +515,7 @@ CHAIN_CSS = """
 
 .chain-stat-value {
   display: block;
-  font-family: 'Orbitron', sans-serif;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 24px;
   font-weight: 700;
   color: var(--cyan);
@@ -526,7 +526,7 @@ CHAIN_CSS = """
 }
 
 .chain-matrix-subtitle {
-  font-family: 'Share Tech Mono', monospace;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 11px;
   color: var(--text-muted);
   margin-bottom: 20px;
@@ -554,7 +554,7 @@ CHAIN_CSS = """
 
 .chain-matrix-corner {
   padding: 10px 12px;
-  font-family: 'Share Tech Mono', monospace;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 10px;
   letter-spacing: 2px;
   color: var(--text-muted);
@@ -563,7 +563,7 @@ CHAIN_CSS = """
 
 .chain-matrix-th {
   padding: 10px 12px;
-  font-family: 'Orbitron', sans-serif;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 2px;
@@ -583,7 +583,7 @@ CHAIN_CSS = """
 }
 
 .chain-id {
-  font-family: 'Share Tech Mono', monospace;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 10px;
   color: var(--cyan);
   letter-spacing: 1px;
@@ -597,7 +597,7 @@ CHAIN_CSS = """
 }
 
 .chain-diff {
-  font-family: 'Share Tech Mono', monospace;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 10px;
   letter-spacing: 1px;
 }
@@ -615,21 +615,21 @@ CHAIN_CSS = """
 }
 
 .chain-cell-score {
-  font-family: 'Orbitron', sans-serif;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 24px;
   font-weight: 700;
   line-height: 1;
 }
 
 .chain-cell-label {
-  font-family: 'Share Tech Mono', monospace;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 10px;
   letter-spacing: 2px;
   margin-top: 4px;
 }
 
 .chain-cell-break {
-  font-family: 'Share Tech Mono', monospace;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 9px;
   color: var(--text-muted);
   margin-top: 2px;
@@ -637,13 +637,13 @@ CHAIN_CSS = """
 
 .chain-cell-empty {
   color: var(--text-muted);
-  font-family: 'Share Tech Mono', monospace;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 14px;
 }
 
 .chain-matrix-footer-cell {
   padding: 8px 12px;
-  font-family: 'Share Tech Mono', monospace;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 10px;
   color: var(--text-muted);
   text-align: center;
@@ -671,7 +671,7 @@ CHAIN_CSS = """
 }
 
 .timeline-chain-id {
-  font-family: 'Share Tech Mono', monospace;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 12px;
   color: var(--cyan);
   padding: 2px 8px;
@@ -707,21 +707,21 @@ CHAIN_CSS = """
 }
 
 .timeline-target-name {
-  font-family: 'Orbitron', sans-serif;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 2px;
 }
 
 .timeline-score {
-  font-family: 'Orbitron', sans-serif;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 14px;
   font-weight: 700;
   margin-left: auto;
 }
 
 .timeline-result {
-  font-family: 'Share Tech Mono', monospace;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 10px;
   letter-spacing: 2px;
   padding: 2px 8px;
@@ -743,14 +743,14 @@ CHAIN_CSS = """
 }
 
 .step-num {
-  font-family: 'Share Tech Mono', monospace;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 11px;
   color: var(--text-muted);
   min-width: 24px;
 }
 
 .step-phase {
-  font-family: 'Share Tech Mono', monospace;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 9px;
   letter-spacing: 1px;
   min-width: 68px;
@@ -772,7 +772,7 @@ CHAIN_CSS = """
 }
 
 .step-score {
-  font-family: 'Orbitron', sans-serif;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 11px;
   font-weight: 700;
   min-width: 36px;
@@ -780,7 +780,7 @@ CHAIN_CSS = """
 }
 
 .step-level {
-  font-family: 'Share Tech Mono', monospace;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 9px;
   color: var(--text-muted);
   min-width: 52px;
@@ -792,7 +792,7 @@ CHAIN_CSS = """
   right: -4px;
   top: 50%;
   transform: translateY(-50%);
-  font-family: 'Share Tech Mono', monospace;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 8px;
   color: var(--red);
   letter-spacing: 1px;
@@ -823,7 +823,7 @@ CHAIN_CSS = """
 }
 
 .gap-target {
-  font-family: 'Orbitron', sans-serif;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 3px;
@@ -839,14 +839,14 @@ CHAIN_CSS = """
 }
 
 .gap-breached {
-  font-family: 'Share Tech Mono', monospace;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 12px;
   color: var(--red);
   letter-spacing: 1px;
 }
 
 .gap-held {
-  font-family: 'Share Tech Mono', monospace;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 12px;
   color: var(--green);
   letter-spacing: 1px;
@@ -865,7 +865,7 @@ CHAIN_CSS = """
 }
 
 .gap-label {
-  font-family: 'Share Tech Mono', monospace;
+  font-family: 'Chakra Petch', sans-serif;
   font-size: 9px;
   letter-spacing: 2px;
   color: var(--text-muted);

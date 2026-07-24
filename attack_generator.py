@@ -4,34 +4,22 @@ Adversarial prompt generation engine.
 Uses Azure OpenAI GPT-4o to craft attack prompts based on the taxonomy.
 """
 
-from openai import AzureOpenAI
 from attack_taxonomy import (
-    ATTACK_TECHNIQUES,
     AttackCategory,
-    AttackTechnique,
     get_techniques_by_category,
     get_all_technique_ids,
     get_technique,
 )
-from config import (
-    AZURE_OPENAI_API_KEY,
-    AZURE_OPENAI_ENDPOINT,
-    AZURE_OPENAI_DEPLOYMENT,
-    AZURE_OPENAI_API_VERSION,
-    DEFAULT_TEMPERATURE,
-)
-
+from config import DEFAULT_TEMPERATURE
+from clients import azure_openai_client, azure_deployment
+from config import DEFAULT_TEMPERATURE, BEDROCK_GENERATOR_MODEL_ID
+from clients import bedrock_client
 
 class AttackGenerator:
     """Generates adversarial prompts using GPT-4o as the red team brain."""
 
     def __init__(self):
-        self.client = AzureOpenAI(
-            api_key=AZURE_OPENAI_API_KEY,
-            azure_endpoint=AZURE_OPENAI_ENDPOINT,
-            api_version=AZURE_OPENAI_API_VERSION,
-        )
-        self.deployment = AZURE_OPENAI_DEPLOYMENT
+        self.client = bedrock_client()
 
         # System prompt that turns GPT-4o into a red team operator
         self.system_prompt = """You are an AI Red Team Specialist conducting authorized 
@@ -71,23 +59,16 @@ Generate a NEW, CREATIVE variation of this attack. Do NOT copy the example.
 Make it sophisticated and realistic. Return ONLY the attack prompt."""
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.deployment,
-                messages=[
-                    {"role": "system", "content": self.system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                temperature=temp,
-                max_tokens=500,
+            response = self.client.converse(
+                modelId=BEDROCK_GENERATOR_MODEL_ID,
+                system=[{"text": self.system_prompt}],
+                messages=[{"role": "user", "content": [{"text": user_prompt}]}],
+                inferenceConfig={"temperature": temp, "maxTokens": 500},
             )
-            attack_prompt = response.choices[0].message.content.strip()
+            attack_prompt = response["output"]["message"]["content"][0]["text"].strip()
         except Exception as e:
-            error_msg = str(e)
-            if "content_filter" in error_msg or "content management" in error_msg:
-                print(f"[!] Azure content filter blocked generation. Using template fallback.")
-                attack_prompt = technique.example_prompt
-            else:
-                raise e
+            print(f"[!] Bedrock generation failed, using template fallback: {e}")
+            attack_prompt = technique.example_prompt
 
         return {
             "technique_id": technique.id,
@@ -142,23 +123,18 @@ Make it sophisticated and realistic. Return ONLY the attack prompt."""
 Make it sophisticated and realistic. Return ONLY the attack prompt."""
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.deployment,
-                messages=[
-                    {"role": "system", "content": self.system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                temperature=temp,
-                max_tokens=500,
+            response = self.client.converse(
+                modelId=BEDROCK_GENERATOR_MODEL_ID,
+                system=[{"text": self.system_prompt}],
+                messages=[{"role": "user", "content": [{"text": user_prompt}]}],
+                inferenceConfig={"temperature": temp, "maxTokens": 500},
             )
-            attack_prompt = response.choices[0].message.content.strip()
+            attack_prompt = response["output"]["message"]["content"][0]["text"].strip()
         except Exception as e:
-            error_msg = str(e)
-            if "content_filter" in error_msg or "content management" in error_msg:
-                print(f"[!] Azure content filter blocked generation. Using raw description.")
-                attack_prompt = description
-            else:
-                raise e
+            # No technique template exists for a freeform custom attack — fall back
+            # to the raw description the caller supplied.
+            print(f"[!] Bedrock generation failed, using raw description as fallback: {e}")
+            attack_prompt = description
 
         return {
             "technique_id": "CUSTOM",

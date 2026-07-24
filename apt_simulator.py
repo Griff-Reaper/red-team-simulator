@@ -7,21 +7,13 @@ from the threat actor's point of view.
 
 import json
 from datetime import datetime, timezone
-from openai import AzureOpenAI
-from anthropic import Anthropic
 
-from apt_personas import APTPersona, get_persona, APT_PERSONAS
-from attack_taxonomy import ATTACK_TECHNIQUES, get_technique
+from apt_personas import APTPersona, get_persona
+from attack_taxonomy import get_technique
 from target_tester import TargetTester
 from results_logger import ResultsLogger
-from config import (
-    AZURE_OPENAI_API_KEY,
-    AZURE_OPENAI_ENDPOINT,
-    AZURE_OPENAI_DEPLOYMENT,
-    AZURE_OPENAI_API_VERSION,
-    ANTHROPIC_API_KEY,
-    RESULTS_DIR,
-)
+from clients import azure_openai_client, azure_deployment
+from config import RESULTS_DIR
 
 
 class APTSimulator:
@@ -31,13 +23,8 @@ class APTSimulator:
     """
 
     def __init__(self):
-        self.azure_client = AzureOpenAI(
-            api_key=AZURE_OPENAI_API_KEY,
-            azure_endpoint=AZURE_OPENAI_ENDPOINT,
-            api_version=AZURE_OPENAI_API_VERSION,
-        )
-        self.anthropic_client = Anthropic(api_key=ANTHROPIC_API_KEY)
-        self.deployment = AZURE_OPENAI_DEPLOYMENT
+        self.azure_client = azure_openai_client()
+        self.deployment = azure_deployment()
         self.tester = TargetTester()
         self.logger = ResultsLogger()
 
@@ -194,8 +181,8 @@ Generate the attack prompt now. In character. Return ONLY the prompt."""
 
     def generate_aar(self, persona: APTPersona, target: str, results: list) -> str:
         """
-        Write the After Action Report from the threat actor's perspective.
-        Uses Claude for richer, more nuanced character voice.
+        Write the After Action Report from the threat actor's perspective,
+        using the Azure OpenAI deployment for in-character narrative voice.
         """
         hits = [r for r in results if r.get("success")]
         blocked = [r for r in results if not r.get("success")]

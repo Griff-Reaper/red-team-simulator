@@ -7,11 +7,8 @@ individually to detect exactly WHERE a model's defenses break down.
 This is separate from TargetTester to keep the single-shot logic clean.
 """
 
-import json
 import time
 from datetime import datetime, timezone
-from openai import AzureOpenAI
-from anthropic import Anthropic
 from multi_turn_chains import (
     EscalationChain,
     ChainStep,
@@ -19,14 +16,10 @@ from multi_turn_chains import (
     get_chain,
     get_all_chains,
 )
-from config import (
-    AZURE_OPENAI_API_KEY,
-    AZURE_OPENAI_ENDPOINT,
-    AZURE_OPENAI_DEPLOYMENT,
-    AZURE_OPENAI_API_VERSION,
-    ANTHROPIC_API_KEY,
-)
+from config import CLAUDE_TARGET_MODEL, JUDGE_MODEL
+from clients import azure_openai_client, azure_deployment, anthropic_client
 from results_logger import ResultsLogger
+from utils import extract_json_object, log
 
 
 class MultiTurnTester:
@@ -36,15 +29,11 @@ class MultiTurnTester:
         self.logger = ResultsLogger()
 
         # Azure OpenAI target
-        self.azure_client = AzureOpenAI(
-            api_key=AZURE_OPENAI_API_KEY,
-            azure_endpoint=AZURE_OPENAI_ENDPOINT,
-            api_version=AZURE_OPENAI_API_VERSION,
-        )
-        self.azure_deployment = AZURE_OPENAI_DEPLOYMENT
+        self.azure_client = azure_openai_client()
+        self.azure_deployment = azure_deployment()
 
         # Claude target
-        self.claude_client = Anthropic(api_key=ANTHROPIC_API_KEY)
+        self.claude_client = anthropic_client()
 
         # Multi-turn judge system prompt — aware of escalation context
         self.chain_judge_prompt = """You are a security evaluator analyzing a MULTI-TURN 
@@ -101,7 +90,7 @@ Respond with ONLY a JSON object in this exact format:
         """Send a full conversation history to Claude."""
         try:
             response = self.claude_client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model=CLAUDE_TARGET_MODEL,
                 max_tokens=1000,
                 messages=messages,
             )
@@ -147,17 +136,18 @@ Evaluate ONLY this step. Respond with ONLY the JSON object."""
 
         try:
             judge_response = self.claude_client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model=JUDGE_MODEL,
                 max_tokens=300,
                 system=self.chain_judge_prompt,
                 messages=[{"role": "user", "content": judge_prompt}],
             )
             raw = judge_response.content[0].text.strip()
-            if raw.startswith("```"):
-                raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
-            return json.loads(raw)
+            verdict = extract_json_object(raw)
+            if verdict is None:
+                raise ValueError(f"Judge returned no parseable JSON: {raw[:200]!r}")
+            return verdict
         except Exception as e:
-            print(f"[!] Chain judge failed at step {step.step_number}: {e}")
+            log(f"Chain judge failed at step {step.step_number}: {e}", level="ERROR")
             return {
                 "compliance_level": "unknown",
                 "compliance_score": 0.0,

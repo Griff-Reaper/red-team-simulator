@@ -44,22 +44,23 @@ def print_banner():
     print(banner)
 
 
-def run_full_assault(generator: AttackGenerator, tester: TargetTester, targets: list):
-    """Execute all techniques against all targets."""
+def run_full_assault(generator: AttackGenerator, tester: TargetTester, targets: list,
+                     variations: int = 1):
+    """Execute all techniques against all targets, ``variations`` prompts each."""
     print(f"\n[*] FULL ASSAULT MODE")
-    print(f"[*] Generating all attacks...")
-    
-    attacks = generator.generate_batch()
+    print(f"[*] Generating all attacks ({variations} variation(s) per technique)...")
+
+    attacks = generator.generate_batch(count_per_technique=variations)
     total_tests = len(attacks) * len(targets)
     
     print(f"[*] Launching {len(attacks)} attacks across {len(targets)} target(s)")
     print(f"[*] Total tests: {total_tests}")
     print(f"[*] Estimated time: {total_tests * 5}-{total_tests * 10} seconds")
-    
-    tester.test_batch(attacks, targets)
-    
+
+    results = tester.test_batch(attacks, targets)
+
     print(f"\n[✓] Full assault complete - {len(attacks)} attacks executed")
-    return len(attacks)
+    return results
 
 
 def run_category_sweep(generator: AttackGenerator, tester: TargetTester, 
@@ -71,10 +72,10 @@ def run_category_sweep(generator: AttackGenerator, tester: TargetTester,
     attacks = generator.generate_by_category(category, count_per_technique=variations)
     
     print(f"[*] Launching {len(attacks)} attack(s)")
-    tester.test_batch(attacks, targets)
-    
+    results = tester.test_batch(attacks, targets)
+
     print(f"\n[✓] Category sweep complete - {len(attacks)} attacks executed")
-    return len(attacks)
+    return results
 
 
 def run_chain_assault(mt_tester: MultiTurnTester, target: str):
@@ -89,8 +90,8 @@ def run_chain_assault(mt_tester: MultiTurnTester, target: str):
     print(f"[*] Estimated API calls: ~{total_steps * 3}")
     
     results = mt_tester.run_all_chains(target, verbose=False)
-    
-    successful_chains = sum(1 for r in results if r.get("fully_successful", False))
+
+    successful_chains = sum(1 for r in results if r.get("chain_success", False))
     print(f"\n[✓] Chain assault complete")
     print(f"[*] Chains executed: {len(results)}")
     print(f"[*] Fully successful: {successful_chains}")
@@ -98,14 +99,45 @@ def run_chain_assault(mt_tester: MultiTurnTester, target: str):
     return results
 
 
-def generate_run_summary(logger: ResultsLogger, start_time: datetime, 
-                        total_attacks: int, mode: str) -> dict:
-    """Generate execution summary."""
+def generate_run_summary(logger: ResultsLogger, start_time: datetime,
+                        total_attacks: int, mode: str, run_entries: list,
+                        verify: bool = False, num_judges: int = 3,
+                        min_severity: str = None) -> dict:
+    """Generate execution summary for the CURRENT run.
+
+    ``run_entries`` are the log entries produced by this run (not the full
+    historical aggregate), so the summary, critical count, and remediation
+    reflect what just happened — including any bedrock / bedrock-guardrails
+    targets that were exercised. When ``verify`` is set, claimed successes are
+    re-checked by an adversarial panel and critical alerting is gated on the
+    *verified* findings only, so false positives don't page anyone.
+    """
     end_time = datetime.now(timezone.utc)
     duration = (end_time - start_time).total_seconds()
-    
-    summary = logger.get_summary()
-    
+
+    summary = logger.get_summary(run_entries)
+
+    from attack_taxonomy import framework_coverage
+    from remediation import remediations_for_findings
+
+    verification_summary = None
+    if verify:
+        from verification import FindingVerifier
+        scope = f" (severity ≥ {min_severity})" if min_severity else ""
+        print(f"[*] Verifying findings with a {num_judges}-judge adversarial panel{scope}...")
+        vreport = FindingVerifier(num_judges=num_judges).verify_results(
+            run_entries, min_severity=min_severity
+        )
+        verification_summary = vreport["summary"]
+        confirmed = vreport["confirmed"]
+        critical_findings = sum(
+            1 for r in confirmed if r.get("severity") in ("high", "critical")
+        )
+        remediation = remediations_for_findings(confirmed)
+    else:
+        critical_findings = len(logger.get_critical_hits(run_entries))
+        remediation = remediations_for_findings(run_entries)
+
     run_summary = {
         "run_metadata": {
             "mode": mode,
@@ -113,11 +145,15 @@ def generate_run_summary(logger: ResultsLogger, start_time: datetime,
             "end_time": end_time.isoformat(),
             "duration_seconds": round(duration, 2),
             "total_attacks_executed": total_attacks,
+            "targets": sorted({r.get("target", "unknown") for r in run_entries}),
         },
         "results_summary": summary,
-        "critical_findings": len(logger.get_critical_hits()),
+        "framework_coverage": framework_coverage(),
+        "critical_findings": critical_findings,
+        "verification": verification_summary,
+        "remediation": remediation,
     }
-    
+
     return run_summary
 
 
@@ -149,6 +185,25 @@ def main():
         help="Variations per technique (default: 1)"
     )
     parser.add_argument(
+        "--verify",
+        action="store_true",
+        help="Re-verify successful findings with an adversarial panel and gate "
+             "critical alerts on verified findings only (weeds out false positives)."
+    )
+    parser.add_argument(
+        "--verify-judges",
+        type=int,
+        default=3,
+        help="Number of independent verifier votes per finding (default: 3)"
+    )
+    parser.add_argument(
+        "--verify-threshold",
+        choices=["all", "medium", "high", "critical"],
+        default="all",
+        help="Only verify findings at/above this severity (default: all). "
+             "Use 'high' to skip low/medium noise and bound verification cost."
+    )
+    parser.add_argument(
         "--output",
         default="results/automated_run_summary.json",
         help="Output file for run summary"
@@ -157,6 +212,11 @@ def main():
         "--no-dashboard",
         action="store_true",
         help="Skip dashboard generation"
+    )
+    parser.add_argument(
+        "--open",
+        action="store_true",
+        help="Open the regenerated dashboard in a browser after the run (local use)"
     )
     
     args = parser.parse_args()
@@ -176,15 +236,17 @@ def main():
     mt_tester = MultiTurnTester()
     print("[✓] Components ready")
     
-    # Connection test
+    # Connection test. quick_test returns a string even on failure (e.g.
+    # "[ERROR] ...", "[CONTENT_FILTERED] ..."), so a truthy check isn't enough —
+    # inspect the payload for engine error markers.
     print("\n[*] Testing connections...")
     for target in args.targets:
         try:
             response = tester.quick_test(target, "Connection test - respond OK")
-            if response:
+            if response and not response.startswith(("[ERROR]", "[CONTENT_FILTERED]")):
                 print(f"[✓] {target}: Connected")
             else:
-                print(f"[✗] {target}: Connection failed")
+                print(f"[✗] {target}: Connection failed - {response}")
                 sys.exit(1)
         except Exception as e:
             print(f"[✗] {target}: Error - {e}")
@@ -192,10 +254,17 @@ def main():
     
     # Execute based on mode
     total_attacks = 0
-    
+    run_results = []  # entries returned by this run (single-shot modes), for counts
+
+    # Snapshot the log size before the run. Every mode (single-shot and chains)
+    # appends to the same log file, so entries[pre_run_count:] afterwards is
+    # exactly this run's contribution — used to build a current-run summary.
+    pre_run_count = len(logger._load_existing())
+
     if args.mode == "full":
-        total_attacks = run_full_assault(generator, tester, args.targets)
-    
+        run_results = run_full_assault(generator, tester, args.targets, args.variations)
+        total_attacks = len(run_results)
+
     elif args.mode == "category":
         if not args.category:
             print("[ERROR] --category required for category mode")
@@ -217,40 +286,60 @@ def main():
             print(f"[*] Available: {', '.join(category_map.keys())}")
             sys.exit(1)
         
-        total_attacks = run_category_sweep(
+        run_results = run_category_sweep(
             generator, tester, category, args.targets, args.variations
         )
-    
+        total_attacks = len(run_results)
+
     elif args.mode == "chains":
         if len(args.targets) > 1:
             print("[WARNING] Chains mode runs against single target, using first target")
         target = args.targets[0]
         chain_results = run_chain_assault(mt_tester, target)
         total_attacks = sum(r.get("steps_completed", 0) for r in chain_results)
-    
+
     elif args.mode == "quick":
         print("\n[*] QUICK MODE - 5 random attacks per target")
         import random
         all_attacks = generator.generate_batch()
         sample = random.sample(all_attacks, min(5, len(all_attacks)))
-        tester.test_batch(sample, args.targets)
-        total_attacks = len(sample) * len(args.targets)
-    
+        run_results = tester.test_batch(sample, args.targets)
+        total_attacks = len(run_results)
+
+    # Re-read the log to capture exactly this run's entries. The summary must
+    # reflect the CURRENT run (including any bedrock / bedrock-guardrails targets
+    # exercised), not the stale aggregate loaded at process start.
+    logger.results = logger._load_existing()
+    run_entries = logger.results[pre_run_count:]
+
+    # Optional verification pass (weeds out false positives before alerting).
+    if args.verify and args.mode == "chains":
+        print("\n[!] --verify is not supported for chains mode; skipping verification.")
+
     # Generate summary
     print("\n[*] Generating run summary...")
-    run_summary = generate_run_summary(logger, start_time, total_attacks, args.mode)
+    run_summary = generate_run_summary(
+        logger, start_time, total_attacks, args.mode, run_entries,
+        verify=args.verify and args.mode != "chains",
+        num_judges=args.verify_judges,
+        min_severity=None if args.verify_threshold == "all" else args.verify_threshold,
+    )
     
     with open(args.output, "w") as f:
         json.dump(run_summary, f, indent=2)
     
     print(f"[✓] Summary saved: {args.output}")
     
-    # Generate dashboard
+    # Generate dashboard. Call build_dashboard() directly with explicit paths —
+    # NOT generate_dashboard.main(), which would re-parse this runner's argv via
+    # argparse and abort with "unrecognized arguments".
     if not args.no_dashboard:
         print("\n[*] Generating dashboard...")
         try:
             import generate_dashboard
-            generate_dashboard.main()
+            from config import LOG_FILE
+            generate_dashboard.build_dashboard(input_path=LOG_FILE, output_dir="docs",
+                                               open_browser=args.open)
             print("[✓] Dashboard updated")
         except Exception as e:
             print(f"[!] Dashboard generation failed: {e}")
@@ -264,7 +353,13 @@ def main():
     print(f"  Successful:     {run_summary['results_summary'].get('successful_attacks', 0)}")
     print(f"  Blocked:        {run_summary['results_summary'].get('blocked_attacks', 0)}")
     print(f"  Success Rate:   {run_summary['results_summary'].get('overall_success_rate', 0)}%")
-    print(f"  Critical Hits:  {run_summary['critical_findings']}")
+    if run_summary.get("verification"):
+        v = run_summary["verification"]
+        print(f"  Verified:       {v['confirmed']} confirmed / "
+              f"{v['downgraded']} false positives "
+              f"(of {v['claimed_successes']} claimed)")
+    print(f"  Critical Hits:  {run_summary['critical_findings']}"
+          f"{' (verified)' if run_summary.get('verification') else ''}")
     print(f"  Duration:       {run_summary['run_metadata']['duration_seconds']}s")
     print("=" * 60)
     

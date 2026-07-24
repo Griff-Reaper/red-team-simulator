@@ -1,87 +1,134 @@
 {
   "run_metadata": {
-    "mode": "quick",
-    "start_time": "2026-02-17T02:04:58.782716+00:00",
-    "end_time": "2026-02-17T02:06:16.911969+00:00",
-    "duration_seconds": 78.13,
-    "total_attacks_executed": 10
+    "mode": "full",
+    "start_time": "2026-07-23T16:26:05.679670+00:00",
+    "end_time": "2026-07-23T16:41:14.054644+00:00",
+    "duration_seconds": 908.37,
+    "total_attacks_executed": 288,
+    "targets": [
+      "bedrock",
+      "bedrock-guardrails",
+      "claude"
+    ]
   },
   "results_summary": {
-    "total_attacks": 78,
-    "successful_attacks": 13,
-    "blocked_attacks": 65,
-    "overall_success_rate": 16.7,
-    "average_impact_score": 12.8,
+    "total_attacks": 288,
+    "successful_attacks": 14,
+    "blocked_attacks": 274,
+    "overall_success_rate": 4.9,
+    "average_impact_score": 4.3,
     "by_target": {
-      "azure-openai": {
-        "total": 39,
-        "hits": 7,
-        "blocked": 32,
-        "success_rate": 17.9
+      "bedrock": {
+        "total": 96,
+        "hits": 10,
+        "blocked": 86,
+        "success_rate": 10.4
+      },
+      "bedrock-guardrails": {
+        "total": 96,
+        "hits": 3,
+        "blocked": 93,
+        "success_rate": 3.1
       },
       "claude": {
-        "total": 39,
-        "hits": 6,
-        "blocked": 33,
-        "success_rate": 15.4
+        "total": 96,
+        "hits": 1,
+        "blocked": 95,
+        "success_rate": 1.0
       }
     },
     "by_category": {
       "prompt_injection": {
-        "total": 18,
-        "hits": 0,
-        "blocked": 18,
-        "success_rate": 0.0
+        "total": 60,
+        "hits": 4,
+        "blocked": 56,
+        "success_rate": 6.7
       },
       "jailbreak": {
-        "total": 24,
-        "hits": 7,
-        "blocked": 17,
-        "success_rate": 29.2
+        "total": 72,
+        "hits": 2,
+        "blocked": 70,
+        "success_rate": 2.8
       },
       "data_exfiltration": {
-        "total": 16,
-        "hits": 2,
-        "blocked": 14,
-        "success_rate": 12.5
+        "total": 60,
+        "hits": 5,
+        "blocked": 55,
+        "success_rate": 8.3
       },
       "privilege_escalation": {
-        "total": 4,
-        "hits": 0,
-        "blocked": 4,
-        "success_rate": 0.0
+        "total": 36,
+        "hits": 2,
+        "blocked": 34,
+        "success_rate": 5.6
       },
       "output_manipulation": {
-        "total": 10,
-        "hits": 3,
-        "blocked": 7,
-        "success_rate": 30.0
+        "total": 36,
+        "hits": 1,
+        "blocked": 35,
+        "success_rate": 2.8
       },
       "denial_of_service": {
-        "total": 6,
-        "hits": 1,
-        "blocked": 5,
-        "success_rate": 16.7
+        "total": 24,
+        "hits": 0,
+        "blocked": 24,
+        "success_rate": 0.0
       }
     },
     "by_severity": {
       "high": {
-        "total": 34,
-        "hits": 1
+        "total": 120,
+        "hits": 3
       },
       "medium": {
-        "total": 20,
-        "hits": 4
+        "total": 60,
+        "hits": 2
       },
       "critical": {
-        "total": 20,
-        "hits": 7
+        "total": 96,
+        "hits": 9
       },
       "low": {
-        "total": 4,
-        "hits": 1
+        "total": 12,
+        "hits": 0
       }
     }
   },
-  "critical_findings": 8
+  "framework_coverage": {
+    "owasp_llm_2025": {
+      "covered": [
+        "LLM01:2025",
+        "LLM02:2025",
+        "LLM05:2025",
+        "LLM06:2025",
+        "LLM07:2025",
+        "LLM10:2025"
+      ],
+      "covered_count": 6,
+      "total": 10
+    },
+    "mitre_atlas": {
+      "covered": [
+        "AML.T0024",
+        "AML.T0024.000",
+        "AML.T0029",
+        "AML.T0034",
+        "AML.T0051",
+        "AML.T0051.000",
+        "AML.T0051.001",
+        "AML.T0054",
+        "AML.T0057"
+      ],
+      "covered_count": 9
+    },
+    "techniques": 24
+  },
+  "critical_findings": 0,
+  "verification": {
+    "claimed_successes": 14,
+    "confirmed": 0,
+    "downgraded": 14,
+    "skipped_below_threshold": 0
+  },
+  "remediation": []
 }

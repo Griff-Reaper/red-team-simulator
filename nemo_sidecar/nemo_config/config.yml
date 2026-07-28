@@ -1,0 +1,26 @@
+# NeMo Guardrails configuration for the bedrock-nemo target.
+#
+# One base model (Amazon Nova, via the custom bedrock_nova_chat engine) wrapped in
+# lean self-check input/output rails. This is the "Nova + self-check" posture: no
+# transformers/torch, so the sidecar stays light. `enable_rails_exceptions` makes a
+# block return a role:"exception" message the sidecar detects unambiguously, rather
+# than a canned refusal string.
+
+models:
+  - type: main
+    engine: bedrock_nova_chat
+    # The concrete model id; the adapter also honors BEDROCK_MODEL_ID from the
+    # environment, so keep this in sync with the main app's `bedrock` target.
+    model: amazon.nova-lite-v1:0
+
+rails:
+  input:
+    flows:
+      - self check input
+  output:
+    flows:
+      - self check output
+
+# Return a structured exception on a block instead of a canned string, so the
+# sidecar can report {"blocked": true} deterministically.
+enable_rails_exceptions: True

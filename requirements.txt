@@ -20,4 +20,8 @@ langgraph>=0.0.20           # Graph-based chains
 # Optional: Azure AI Search (for RAG features)
 azure-search-documents>=11.4.0
 
+# Note: the bedrock-nemo target's NeMo Guardrails dependency is intentionally NOT
+# listed here — NeMo requires Python <3.14 and cannot install in this (3.14) venv.
+# It runs as an isolated Python 3.11 sidecar; see nemo_sidecar/requirements.txt.
+
 # Note: Python 3.10+ recommended

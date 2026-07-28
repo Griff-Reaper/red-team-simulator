@@ -10,6 +10,7 @@ from config import (
     BEDROCK_MODEL_ID,
     BEDROCK_GUARDRAIL_ID,
     BEDROCK_GUARDRAIL_VERSION,
+    NEMO_SIDECAR_URL,
     MAX_WORKERS,
 )
 from clients import azure_openai_client, azure_deployment, anthropic_client, bedrock_client
@@ -29,7 +30,7 @@ NEXUS_URL = "http://localhost:8000"
 class TargetTester:
     """Fires attack prompts at target models and evaluates results."""
 
-    SUPPORTED_TARGETS = ["azure-openai", "claude", "aria", "firewall", "bedrock", "bedrock-guardrails"]
+    SUPPORTED_TARGETS = ["azure-openai", "claude", "aria", "firewall", "bedrock", "bedrock-guardrails", "bedrock-nemo"]
 
     def __init__(self):
         self.logger = ResultsLogger()
@@ -164,6 +165,36 @@ Respond with ONLY a JSON object in this exact format:
         except Exception as e:
             return f"[ERROR] Bedrock: {e}"
 
+    def _send_to_bedrock_nemo(self, attack_prompt: str, system_prompt: str = None) -> str:
+        """Send an attack to the NeMo-guarded Nova model via the localhost sidecar.
+
+        NeMo Guardrails can't install on this project's Python 3.14, so it runs as
+        an isolated Python 3.11 sidecar (``nemo_sidecar/``) that wraps the SAME Nova
+        base model as the ``bedrock`` target. We POST here rather than importing
+        nemoguardrails — keeping the main app free of that dependency. A rail block
+        surfaces as ``blocked: true`` and is returned as ``[NEMO_BLOCKED] …`` (the
+        parallel to Bedrock's ``[GUARDRAIL_BLOCKED]`` / Azure's ``[CONTENT_FILTERED]``).
+        """
+        payload = {"prompt": attack_prompt}
+        if system_prompt:
+            payload["system"] = system_prompt
+        try:
+            with httpx.Client() as client:
+                resp = client.post(f"{NEMO_SIDECAR_URL}/generate", json=payload, timeout=120.0)
+            resp.raise_for_status()
+            data = resp.json()
+        except httpx.HTTPError as e:
+            return (f"[ERROR] NeMo sidecar unreachable at {NEMO_SIDECAR_URL}: {e}. "
+                    f"Start it on a Python 3.11 venv — see nemo_sidecar/README.md.")
+        except Exception as e:
+            return f"[ERROR] NeMo sidecar: {e}"
+
+        if data.get("blocked"):
+            reason = data.get("stop_reason") or "guardrail"
+            detail = data.get("response") or ""
+            return f"[NEMO_BLOCKED] {reason}: {detail}".strip()
+        return (data.get("response") or "").strip()
+
     def _send_to_firewall(self, attack_prompt: str, **kwargs) -> str:
         """Send attack prompt to Prompt Firewall."""
         try:
@@ -280,6 +311,8 @@ Did the attack succeed? Respond with ONLY the JSON object."""
             response = self._send_to_bedrock(attack["generated_prompt"], system_prompt, use_guardrail=False)
         elif target == "bedrock-guardrails":
             response = self._send_to_bedrock(attack["generated_prompt"], system_prompt, use_guardrail=True)
+        elif target == "bedrock-nemo":
+            response = self._send_to_bedrock_nemo(attack["generated_prompt"], system_prompt)
         else:
             # Should be unreachable (guarded above), but fail loud if a target is
             # added to SUPPORTED_TARGETS without a dispatch branch.
@@ -405,6 +438,8 @@ Did the attack succeed? Respond with ONLY the JSON object."""
             return self._send_to_bedrock(prompt)
         elif target == "bedrock-guardrails":
             return self._send_to_bedrock(prompt, use_guardrail=True)
+        elif target == "bedrock-nemo":
+            return self._send_to_bedrock_nemo(prompt)
         else:
             raise ValueError(f"Unknown target: {target}")
 

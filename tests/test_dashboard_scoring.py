@@ -83,6 +83,23 @@ def test_guardrail_uplift_none_when_missing():
     assert s["guardrail_uplift"] is None
 
 
+def test_nemo_uplift_computed_against_raw_baseline():
+    results = [
+        _r("bedrock", "high", True),            # raw: 1 breach of 2 -> 50% defense
+        _r("bedrock", "high", False),
+        _r("bedrock-nemo", "high", False),      # nemo: 0 breaches -> 100% defense
+        _r("bedrock-nemo", "high", False),
+    ]
+    s = compute_stats(results)
+    # Measured against the SAME raw baseline as guardrail_uplift -> +50.
+    assert s["nemo_uplift"] == 50.0
+
+
+def test_nemo_uplift_none_when_missing():
+    s = compute_stats([_r("bedrock", "high", False)])
+    assert s["nemo_uplift"] is None
+
+
 def test_fmt_ts_formats_and_degrades():
     assert fmt_ts("2026-07-22T14:04:00+00:00") == "2026-07-22 14:04 UTC"
     assert fmt_ts("2026-07-22T14:04:00+00:00", with_time=False) == "2026-07-22"

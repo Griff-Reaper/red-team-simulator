@@ -246,6 +246,54 @@ crashed.
 
 ---
 
+## Phase 7 — Taxonomy Expansion: Agentic & Embedding Threats (2026-07-27)
+
+Grew the technique catalog from **24 → 37** with a research-grounded tranche
+targeting the agentic and retrieval attack surface — the classes the prior
+taxonomy (single-turn prompt/jailbreak) under-covered. Every entry traces to a
+primary source (JailbreakBench artifacts, Giskard, the Magic-Words / adaptive-
+attacks / ToolHijacker / prompt-injection-SoK papers, Arcanum PI taxonomy).
+
+### 13 new techniques (`attack_taxonomy.py`)
+
+| ID | Name | Sev | OWASP |
+|---|---|---|---|
+| PI-006 | Adversarial Suffix (Random-Search / GCG Tail) | HIGH | LLM01 |
+| PI-007 | Embedding-Guard Magic-Word Suffix | HIGH | **LLM08** |
+| PI-008 | Tool-Definition / MCP Tool Poisoning (ToolHijacker) | CRITICAL | LLM06 |
+| JB-007 | Structured Rule-Prefix Scaffold | HIGH | LLM01 |
+| JB-008 | Evolutionary Search Jailbreak | HIGH | LLM01 |
+| JB-009 | Policy Puppetry (Policy-File Framing) | HIGH | LLM01 |
+| JB-010 | Evaluator-Role Abuse (Bad Likert Judge) | MEDIUM | LLM01 |
+| JB-011 | Fake Assistant Turn (History Fabrication) | HIGH | LLM01 |
+| DE-006 | Agent Tool-Invocation Exfiltration | CRITICAL | LLM02 |
+| PE-004 | Rules-File Backdoor (Agent Instruction-File Injection) | HIGH | LLM06 |
+| PE-005 | Context-Aware Agent Logic Injection | CRITICAL | LLM06 |
+| OM-004 | Adversarial Poetry / Symbolic-Math Encoding | MEDIUM | LLM05 |
+| DOS-003 | Denial of Wallet (Agentic Resource Consumption) | MEDIUM | LLM10 |
+
+- **First LLM08 (Vector & Embedding Weaknesses) coverage** via PI-007 — OWASP
+  coverage rose **6/10 → 7/10**. Added the matching LLM08 remediation playbook to
+  `remediation.py` so the new category ships with actionable controls, not just a
+  finding.
+- **9 new MITRE ATLAS technique IDs** registered (`AML.T0053`, `AML.T0065`,
+  `AML.T0067`, `AML.T0068`, `AML.T0080.001`, `AML.T0081`, `AML.T0084.001`,
+  `AML.T0086`, `AML.T0034.002`) — the agentic tool-invocation, prompt-crafting/
+  obfuscation, agent-config, and agentic-cost families. ATLAS techniques exercised
+  rose **8 → 18**.
+- Example prompts are **defanged research artifacts** — `[OBJECTIVE]`/`[PAYLOAD]`
+  placeholders, no working weaponized payloads — consistent with the existing
+  catalog and appropriate for a defensive testing tool.
+
+### Tests
+
+- `test_taxonomy.py` +3: LLM08 coverage regression-guard, all-13 presence/mapping
+  check, and 9-new-ATLAS-id resolution. Coverage floor raised to ≥7 OWASP.
+- Full suite: **72 passed** (was 69). Dashboard build, browse-taxonomy render, and
+  framework-coverage roll-up verified against the expanded catalog.
+
+---
+
 ## Reference
 
 ### New files

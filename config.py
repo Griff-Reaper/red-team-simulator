@@ -40,6 +40,15 @@ BEDROCK_MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "amazon.nova-lite-v1:0")
 BEDROCK_GUARDRAIL_ID = os.getenv("BEDROCK_GUARDRAIL_ID")
 BEDROCK_GUARDRAIL_VERSION = os.getenv("BEDROCK_GUARDRAIL_VERSION", "DRAFT")
 BEDROCK_GENERATOR_MODEL_ID = os.getenv("BEDROCK_GENERATOR_MODEL_ID", "us.meta.llama3-3-70b-instruct-v1:0")
+
+# ── NeMo Guardrails sidecar (optional target: bedrock-nemo) ──────────────────
+# NeMo Guardrails requires Python <3.14 and can't install in this project's 3.14
+# venv, so it runs as an isolated Python 3.11 sidecar (see nemo_sidecar/). The
+# main app never imports nemoguardrails — it talks to the sidecar over localhost
+# HTTP, exactly like the aria/firewall targets. 127.0.0.1 (not "localhost") avoids
+# the Windows IPv6 ::1 resolution quirk.
+NEMO_SIDECAR_URL = os.getenv("NEMO_SIDECAR_URL", "http://127.0.0.1:8003")
+
 # ── Simulator settings ──────────────────────────────────────────────────────
 MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))
 REQUEST_TIMEOUT = float(os.getenv("REQUEST_TIMEOUT", "60"))  # per-request seconds
@@ -69,6 +78,10 @@ _REQUIRED_ENV = {
     "anthropic": ["ANTHROPIC_API_KEY"],
     "bedrock": ["BEDROCK_MODEL_ID"],
     "bedrock-guardrails": ["BEDROCK_GUARDRAIL_ID"],
+    # bedrock-nemo wraps the same base model as `bedrock`; the NeMo rails run in
+    # the sidecar. From the main app's side the only hard requirement is the base
+    # model id (the sidecar URL has a working default).
+    "bedrock-nemo": ["BEDROCK_MODEL_ID"],
 }
 
 

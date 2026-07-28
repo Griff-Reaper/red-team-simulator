@@ -62,8 +62,13 @@ authorized red-team exercises.
 | Anthropic Claude | `claude` | Target + LLM judge |
 | Amazon Bedrock | `bedrock` | Optional (`pip install boto3`) |
 | Amazon Bedrock + Guardrails | `bedrock-guardrails` | Optional |
+| Amazon Bedrock + NeMo Guardrails | `bedrock-nemo` | Optional — same Nova base wrapped in NVIDIA NeMo self-check rails. Runs as an isolated Python 3.11 sidecar (`nemo_sidecar/`, NeMo needs Python <3.14). |
 | ARIA Honeypot | `aria` | Local service (`:8001`) |
 | Prompt Firewall | `firewall` | Local service (`:8002`) |
+
+> **Purple-team A/B:** `bedrock`, `bedrock-guardrails`, and `bedrock-nemo` share one
+> base model (Nova), so the dashboard can quantify each defense layer's block-rate
+> uplift over the raw model on equal footing.
 
 ## Framework Alignment
 

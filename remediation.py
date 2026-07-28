@@ -89,6 +89,29 @@ REMEDIATIONS = {
         ],
         "references": ["OWASP LLM07:2025", "MITRE ATLAS AML.T0057"],
     },
+    "LLM08:2025": {
+        "title": "Vector and Embedding Weaknesses",
+        "summary": "A retrieval/embedding component was manipulated — poisoned "
+                   "index content, or an adversarial suffix that collapses an "
+                   "embedding-similarity guard toward random guessing.",
+        "controls": [
+            "Do not use embedding similarity as a security boundary on its own: "
+            "back retrieval/guard decisions with an independent classifier and "
+            "exact-match rules, so a single 'magic word' suffix cannot flip the "
+            "verdict.",
+            "Partition the vector store by tenant and permission; enforce "
+            "access control at query time so retrieval cannot cross trust "
+            "boundaries.",
+            "Validate, sanitize, and provenance-check every document before "
+            "embedding it — reject or quarantine tool/plugin descriptions and "
+            "RAG content from untrusted publishers (defends tool-definition "
+            "poisoning).",
+            "Monitor retrieval for anomalies (near-duplicate injected docs, "
+            "outlier embeddings, sudden top-rank churn) and re-rank or threshold "
+            "results rather than trusting the single nearest neighbor.",
+        ],
+        "references": ["OWASP LLM08:2025", "MITRE ATLAS AML.T0068"],
+    },
     "LLM10:2025": {
         "title": "Unbounded Consumption",
         "summary": "The model was driven to excessive token/compute use "

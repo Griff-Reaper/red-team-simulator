@@ -76,8 +76,10 @@ _TARGET_MENU = {
     "4": "firewall",
     "5": "bedrock",
     "6": "bedrock-guardrails",
+    "7": "bedrock-nemo",
 }
 _ALL_TARGETS = list(_TARGET_MENU.values())
+_ALL_CHOICE = str(len(_TARGET_MENU) + 1)  # "All" sits just past the last target
 
 
 def _print_target_menu(include_all: bool):
@@ -88,8 +90,9 @@ def _print_target_menu(include_all: bool):
     print("  4. Prompt Firewall")
     print("  5. Amazon Bedrock")
     print("  6. Amazon Bedrock + Guardrails")
+    print("  7. Amazon Bedrock + NeMo Guardrails")
     if include_all:
-        print("  7. All")
+        print(f"  {_ALL_CHOICE}. All")
 
 
 def select_target() -> list:
@@ -97,7 +100,7 @@ def select_target() -> list:
     _print_target_menu(include_all=True)
 
     choice = input("\n  > ").strip()
-    if choice == "7":
+    if choice == _ALL_CHOICE:
         return list(_ALL_TARGETS)
     if choice in _TARGET_MENU:
         return [_TARGET_MENU[choice]]

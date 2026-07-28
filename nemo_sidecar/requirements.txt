@@ -1,0 +1,12 @@
+# NeMo Guardrails sidecar dependencies — install into a SEPARATE Python 3.11 venv
+# (NeMo requires >=3.10,<3.14 and cannot install in the main project's 3.14 venv).
+#
+#   py -3.11 -m venv .venv-nemo
+#   .venv-nemo\Scripts\pip install -r requirements.txt   # Windows
+#   source .venv-nemo/bin/activate && pip install -r requirements.txt  # POSIX
+#
+# nemoguardrails pulls in langchain-core, so BedrockNovaChat's LangChain imports
+# resolve transitively; it is pinned here only for clarity.
+nemoguardrails>=0.23,<0.24
+langchain-core>=0.3,<0.4
+boto3>=1.40

@@ -187,11 +187,18 @@ def compute_stats(results: list[dict]) -> dict:
     crit_breaches = by_severity.get("critical", {}).get("hits", 0)
     high_breaches = by_severity.get("high", {}).get("hits", 0)
 
-    # Purple-team A/B: how much a guardrail layer adds over the raw model.
+    # Purple-team A/B: how much each policy layer adds over the same raw base model.
+    # Both are measured against the shared `bedrock` (raw Nova) baseline, giving a
+    # coherent one-base three-way comparison (raw / Bedrock Guardrails / NeMo).
     guardrail_uplift = None
     if "bedrock" in by_target and "bedrock-guardrails" in by_target:
         guardrail_uplift = round(
             by_target["bedrock-guardrails"]["defense_rate"] - by_target["bedrock"]["defense_rate"], 1
+        )
+    nemo_uplift = None
+    if "bedrock" in by_target and "bedrock-nemo" in by_target:
+        nemo_uplift = round(
+            by_target["bedrock-nemo"]["defense_rate"] - by_target["bedrock"]["defense_rate"], 1
         )
 
     # Framework coverage (attack-surface breadth) — best effort.
@@ -213,6 +220,7 @@ def compute_stats(results: list[dict]) -> dict:
         "crit_breaches": crit_breaches,
         "high_breaches": high_breaches,
         "guardrail_uplift": guardrail_uplift,
+        "nemo_uplift": nemo_uplift,
         "coverage": coverage,
         "by_target": dict(by_target),
         "by_category": dict(by_category),
@@ -266,6 +274,12 @@ TARGET_CONFIG = {
         "css_class": "bedrock-guardrails",
         "defense": "Defense Strategy: Amazon Bedrock Guardrails wrap the model with configurable content, topic, and word policies that intercept prompts and responses before they reach or leave the model.",
     },
+    "bedrock-nemo": {
+        "name": "BEDROCK + NEMO",
+        "subtitle": "Nova Lite + NeMo Guardrails",
+        "css_class": "bedrock-nemo",
+        "defense": "Defense Strategy: NVIDIA NeMo Guardrails wrap the same Nova model with programmable self-check input/output rails — an LLM-graded policy layer distinct from Bedrock's managed Guardrails. The third posture in a one-base, three-way purple-team A/B.",
+    },
 }
 
 SEVERITY_COLORS = {
@@ -277,8 +291,14 @@ SEVERITY_COLORS = {
 
 
 def _target_css_class(target: str) -> str:
-    """Map a target id to its CSS accent class (bedrock-guardrails before bedrock)."""
+    """Map a target id to its CSS accent class.
+
+    Order matters: the more specific bedrock variants ('nemo', 'guardrail') must
+    be checked before the bare 'bedrock' substring, since both contain it.
+    """
     t = (target or "").lower()
+    if "nemo" in t:
+        return "bedrock-nemo"
     if "guardrail" in t:
         return "bedrock-guardrails"
     if "bedrock" in t:
@@ -651,6 +671,8 @@ EVAL_CSS = """
 .defense-pct { min-width: 110px; font-family: 'Chakra Petch', sans-serif; font-size: 12px; color: var(--text-dim); }
 .guardrail-uplift { padding: 20px 24px; background: linear-gradient(135deg, #1a1206, var(--bg-card)); border: 1px solid #ffab2e44; border-left: 3px solid #ffab2e; }
 .guardrail-uplift .big { font-family: 'Audiowide', sans-serif; font-size: 36px; color: #ffab2e; }
+.nemo-uplift { padding: 20px 24px; margin-top: 14px; background: linear-gradient(135deg, #06201d, var(--bg-card)); border: 1px solid #2ec4b644; border-left: 3px solid #2ec4b6; }
+.nemo-uplift .big { font-family: 'Audiowide', sans-serif; font-size: 36px; color: #2ec4b6; }
 """
 
 
@@ -741,18 +763,34 @@ def gen_defense_section(stats: dict) -> str:
       </div>''')
     bars = "\n".join(rows)
 
+    raw = by_target.get("bedrock", {}).get("defense_rate")
+
     uplift_html = ""
     if stats["guardrail_uplift"] is not None:
         u = stats["guardrail_uplift"]
-        raw = by_target.get("bedrock", {}).get("defense_rate")
         guarded = by_target.get("bedrock-guardrails", {}).get("defense_rate")
         sign = "+" if u >= 0 else ""
         uplift_html = f'''    <div class="guardrail-uplift">
-      <div style="font-family:'Chakra Petch',sans-serif;font-size:11px;letter-spacing:2px;color:var(--text-dim);text-transform:uppercase">Purple-Team A/B &#8212; Guardrail Layer Impact</div>
+      <div style="font-family:'Chakra Petch',sans-serif;font-size:11px;letter-spacing:2px;color:var(--text-dim);text-transform:uppercase">Purple-Team A/B &#8212; Bedrock Guardrails Layer Impact</div>
       <div style="display:flex;align-items:baseline;gap:18px;margin-top:10px;flex-wrap:wrap">
         <div class="big">{sign}{u}%</div>
         <div style="font-family:'Rajdhani',sans-serif;font-size:16px;color:var(--text-dim);line-height:1.5">
-          Bedrock Guardrails raised the block rate from <strong style="color:var(--text-primary)">{raw}%</strong> (raw model) to <strong style="color:var(--text-primary)">{guarded}%</strong> &#8212; quantified defense value of the policy layer.
+          Bedrock Guardrails raised the block rate from <strong style="color:var(--text-primary)">{raw}%</strong> (raw model) to <strong style="color:var(--text-primary)">{guarded}%</strong> &#8212; quantified defense value of the managed policy layer.
+        </div>
+      </div>
+    </div>'''
+
+    nemo_uplift_html = ""
+    if stats.get("nemo_uplift") is not None:
+        u = stats["nemo_uplift"]
+        nemo = by_target.get("bedrock-nemo", {}).get("defense_rate")
+        sign = "+" if u >= 0 else ""
+        nemo_uplift_html = f'''    <div class="nemo-uplift">
+      <div style="font-family:'Chakra Petch',sans-serif;font-size:11px;letter-spacing:2px;color:var(--text-dim);text-transform:uppercase">Purple-Team A/B &#8212; NeMo Guardrails Layer Impact</div>
+      <div style="display:flex;align-items:baseline;gap:18px;margin-top:10px;flex-wrap:wrap">
+        <div class="big">{sign}{u}%</div>
+        <div style="font-family:'Rajdhani',sans-serif;font-size:16px;color:var(--text-dim);line-height:1.5">
+          NeMo self-check rails raised the block rate from <strong style="color:var(--text-primary)">{raw}%</strong> (raw model) to <strong style="color:var(--text-primary)">{nemo}%</strong> &#8212; measured on the same Nova base for an apples-to-apples layer comparison.
         </div>
       </div>
     </div>'''
@@ -765,6 +803,7 @@ def gen_defense_section(stats: dict) -> str:
 {bars}
     </div>
 {uplift_html}
+{nemo_uplift_html}
   </div>
 '''
 
@@ -1112,10 +1151,16 @@ body::before {{
   border: 1px solid #d97a1a44;
 }}
 
+.target-box.bedrock-nemo {{
+  background: linear-gradient(135deg, #06201d 0%, var(--bg-card) 100%);
+  border: 1px solid #2ec4b644;
+}}
+
 .target-box.azure.visible {{ animation: fadeInLeft 0.7s ease forwards; }}
 .target-box.claude.visible {{ animation: fadeInRight 0.7s ease forwards 0.2s; }}
 .target-box.bedrock.visible {{ animation: fadeInLeft 0.7s ease forwards 0.1s; }}
 .target-box.bedrock-guardrails.visible {{ animation: fadeInRight 0.7s ease forwards 0.3s; }}
+.target-box.bedrock-nemo.visible {{ animation: fadeInLeft 0.7s ease forwards 0.4s; }}
 
 .target-name {{
   font-family: 'Chakra Petch', sans-serif;
@@ -1129,6 +1174,7 @@ body::before {{
 .target-box.claude .target-name {{ color: #cc88ff; }}
 .target-box.bedrock .target-name {{ color: #ffab2e; }}
 .target-box.bedrock-guardrails .target-name {{ color: #d97a1a; }}
+.target-box.bedrock-nemo .target-name {{ color: #2ec4b6; }}
 
 .target-rate {{
   font-family: 'Chakra Petch', sans-serif;
@@ -1141,6 +1187,7 @@ body::before {{
 .target-box.claude .target-rate {{ color: #cc88ff; }}
 .target-box.bedrock .target-rate {{ color: #ffab2e; }}
 .target-box.bedrock-guardrails .target-rate {{ color: #d97a1a; }}
+.target-box.bedrock-nemo .target-rate {{ color: #2ec4b6; }}
 
 .target-detail {{
   font-family: 'Chakra Petch', sans-serif;
@@ -1369,6 +1416,7 @@ body::before {{
 .finding-target.claude {{ color: #cc88ff; border-color: #cc88ff44; }}
 .finding-target.bedrock {{ color: #ffab2e; border-color: #ffab2e44; }}
 .finding-target.bedrock-guardrails {{ color: #d97a1a; border-color: #d97a1a44; }}
+.finding-target.bedrock-nemo {{ color: #2ec4b6; border-color: #2ec4b644; }}
 
 .finding-meta {{
   display: flex;
@@ -1725,7 +1773,8 @@ results.forEach((r, i) => {{
                     r.filtered ? '<span class="tag filtered">FILTERED</span>' : 
                     '<span class="tag blocked">BLOCKED</span>';
   const sevTag = `<span class="tag sev-${{r.sev}}">${{r.sev.toUpperCase()}}</span>`;
-  const targetColor = r.target.includes('guardrail') ? '#d97a1a' :
+  const targetColor = r.target.includes('nemo') ? '#2ec4b6' :
+                      r.target.includes('guardrail') ? '#d97a1a' :
                       r.target.includes('bedrock') ? '#ffab2e' :
                       r.target.includes('azure') ? '#4488ff' : '#cc88ff';
 

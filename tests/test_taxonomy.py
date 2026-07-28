@@ -48,5 +48,39 @@ def test_framework_coverage_shape():
     cov = framework_coverage()
     assert cov["techniques"] == len(ATTACK_TECHNIQUES)
     assert cov["owasp_llm_2025"]["total"] == 10
-    assert cov["owasp_llm_2025"]["covered_count"] >= 5
+    # The agentic + embedding expansion pushed coverage to 7 OWASP categories.
+    assert cov["owasp_llm_2025"]["covered_count"] >= 7
     assert cov["mitre_atlas"]["covered_count"] >= 5
+
+
+def test_llm08_vector_embedding_is_covered():
+    """PI-007 is the first technique mapped to LLM08 — regression-guard it."""
+    cov = framework_coverage()
+    assert "LLM08:2025" in cov["owasp_llm_2025"]["covered"]
+    assert any(t.id == "PI-007" for t in get_techniques_by_owasp("LLM08:2025"))
+
+
+def test_expansion_techniques_present_and_well_formed():
+    """Every technique added by the taxonomy expansion is registered and mapped."""
+    expected = {
+        "PI-006", "PI-007", "PI-008",
+        "JB-007", "JB-008", "JB-009", "JB-010", "JB-011",
+        "DE-006", "PE-004", "PE-005", "OM-004", "DOS-003",
+    }
+    assert expected.issubset(ATTACK_TECHNIQUES.keys())
+    for tid in expected:
+        tech = ATTACK_TECHNIQUES[tid]
+        assert tech.example_prompt.strip(), f"{tid} has an empty example_prompt"
+        assert tech.owasp in OWASP_LLM_2025
+        assert tech.mitre_atlas and all(a in MITRE_ATLAS for a in tech.mitre_atlas)
+
+
+def test_new_atlas_ids_registered():
+    """The 9 ATLAS ids the expansion introduced must resolve to labels."""
+    new_ids = {
+        "AML.T0053", "AML.T0065", "AML.T0067", "AML.T0068", "AML.T0080.001",
+        "AML.T0081", "AML.T0084.001", "AML.T0086", "AML.T0034.002",
+    }
+    assert new_ids.issubset(MITRE_ATLAS.keys())
+    for aid in new_ids:
+        assert MITRE_ATLAS[aid].strip()

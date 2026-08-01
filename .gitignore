@@ -15,5 +15,8 @@ __pycache__/
 *.pyc
 .pytest_cache/
 
-# Virtual environment
+# Virtual environments (root venv + the isolated Python 3.11 NeMo sidecar venv)
 venv/
+.venv/
+.venv-nemo/
+nemo_sidecar/.venv-nemo/

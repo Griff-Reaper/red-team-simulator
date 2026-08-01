@@ -1,95 +1,80 @@
 {
   "run_metadata": {
-    "mode": "full",
-    "start_time": "2026-07-23T16:26:05.679670+00:00",
-    "end_time": "2026-07-23T16:41:14.054644+00:00",
-    "duration_seconds": 908.37,
-    "total_attacks_executed": 288,
+    "mode": "quick",
+    "start_time": "2026-08-01T18:26:51.291610+00:00",
+    "end_time": "2026-08-01T18:28:45.405437+00:00",
+    "duration_seconds": 114.11,
+    "total_attacks_executed": 20,
     "targets": [
       "bedrock",
       "bedrock-guardrails",
+      "bedrock-nemo",
       "claude"
     ]
   },
   "results_summary": {
-    "total_attacks": 288,
-    "successful_attacks": 14,
-    "blocked_attacks": 274,
-    "overall_success_rate": 4.9,
-    "average_impact_score": 4.3,
+    "total_attacks": 20,
+    "successful_attacks": 0,
+    "blocked_attacks": 20,
+    "overall_success_rate": 0.0,
+    "average_impact_score": 0.0,
     "by_target": {
-      "bedrock": {
-        "total": 96,
-        "hits": 10,
-        "blocked": 86,
-        "success_rate": 10.4
-      },
       "bedrock-guardrails": {
-        "total": 96,
-        "hits": 3,
-        "blocked": 93,
-        "success_rate": 3.1
+        "total": 5,
+        "hits": 0,
+        "blocked": 5,
+        "success_rate": 0.0
+      },
+      "bedrock": {
+        "total": 5,
+        "hits": 0,
+        "blocked": 5,
+        "success_rate": 0.0
+      },
+      "bedrock-nemo": {
+        "total": 5,
+        "hits": 0,
+        "blocked": 5,
+        "success_rate": 0.0
       },
       "claude": {
-        "total": 96,
-        "hits": 1,
-        "blocked": 95,
-        "success_rate": 1.0
+        "total": 5,
+        "hits": 0,
+        "blocked": 5,
+        "success_rate": 0.0
       }
     },
     "by_category": {
-      "prompt_injection": {
-        "total": 60,
-        "hits": 4,
-        "blocked": 56,
-        "success_rate": 6.7
+      "data_exfiltration": {
+        "total": 4,
+        "hits": 0,
+        "blocked": 4,
+        "success_rate": 0.0
       },
       "jailbreak": {
-        "total": 72,
-        "hits": 2,
-        "blocked": 70,
-        "success_rate": 2.8
-      },
-      "data_exfiltration": {
-        "total": 60,
-        "hits": 5,
-        "blocked": 55,
-        "success_rate": 8.3
+        "total": 12,
+        "hits": 0,
+        "blocked": 12,
+        "success_rate": 0.0
       },
       "privilege_escalation": {
-        "total": 36,
-        "hits": 2,
-        "blocked": 34,
-        "success_rate": 5.6
-      },
-      "output_manipulation": {
-        "total": 36,
-        "hits": 1,
-        "blocked": 35,
-        "success_rate": 2.8
-      },
-      "denial_of_service": {
-        "total": 24,
+        "total": 4,
         "hits": 0,
-        "blocked": 24,
+        "blocked": 4,
         "success_rate": 0.0
       }
     },
     "by_severity": {
-      "high": {
-        "total": 120,
-        "hits": 3
+      "critical": {
+        "total": 8,
+        "hits": 0
       },
       "medium": {
-        "total": 60,
-        "hits": 2
+        "total": 4,
+        "hits": 0
       },
-      "critical": {
-        "total": 96,
-        "hits": 9
-      },
-      "low": {
-        "total": 12,
+      "high": {
+        "total": 8,
         "hits": 0
       }
     }
@@ -102,9 +87,10 @@
         "LLM05:2025",
         "LLM06:2025",
         "LLM07:2025",
+        "LLM08:2025",
         "LLM10:2025"
       ],
-      "covered_count": 6,
+      "covered_count": 7,
       "total": 10
     },
     "mitre_atlas": {
@@ -113,22 +99,26 @@
         "AML.T0024.000",
         "AML.T0029",
         "AML.T0034",
+        "AML.T0034.002",
         "AML.T0051",
         "AML.T0051.000",
         "AML.T0051.001",
+        "AML.T0053",
         "AML.T0054",
-        "AML.T0057"
+        "AML.T0057",
+        "AML.T0065",
+        "AML.T0067",
+        "AML.T0068",
+        "AML.T0080.001",
+        "AML.T0081",
+        "AML.T0084.001",
+        "AML.T0086"
       ],
-      "covered_count": 9
+      "covered_count": 18
     },
-    "techniques": 24
+    "techniques": 37
   },
   "critical_findings": 0,
-  "verification": {
-    "claimed_successes": 14,
-    "confirmed": 0,
-    "downgraded": 14,
-    "skipped_below_threshold": 0
-  },
+  "verification": null,
   "remediation": []
 }

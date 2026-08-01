@@ -577,7 +577,7 @@ def gen_table_data(results: list[dict]) -> str:
 
 def gen_framework_section(results: list) -> str:
     """Render OWASP/MITRE ATLAS coverage + actionable remediation (Strix-style)."""
-    from attack_taxonomy import framework_coverage, OWASP_LLM_2025
+    from attack_taxonomy import framework_coverage, OWASP_LLM_2025, MITRE_ATLAS
     from remediation import remediations_for_findings
 
     cov = framework_coverage()
@@ -589,10 +589,12 @@ def gen_framework_section(results: list) -> str:
         f'font-size:12px">{oid} · {OWASP_LLM_2025.get(oid, "")}</span>'
         for oid in owasp["covered"]
     )
+    # ATLAS chips carry their human-readable technique name too (not just the id),
+    # so the framework section reads without an external ATLAS lookup.
     atlas_chips = "".join(
         f'<span style="display:inline-block;margin:3px;padding:4px 10px;'
         f'border:1px solid var(--red-dim);border-radius:4px;color:var(--red);'
-        f'font-size:12px">{aid}</span>'
+        f'font-size:12px">{aid} · {MITRE_ATLAS.get(aid, "")}</span>'
         for aid in atlas["covered"]
     )
 
@@ -1884,20 +1886,33 @@ const barObserver = new IntersectionObserver((entries) => {{
 
 document.querySelectorAll('.bar-chart').forEach(el => barObserver.observe(el));
 
-// Table row stagger
+// Table row stagger. A full attack log can be hundreds of rows tall — far taller
+// than the viewport — so a non-zero IntersectionObserver threshold could never be
+// reached and the rows would stay stuck at opacity:0. Use threshold 0 (fires as
+// soon as any pixel is visible), cap the stagger so a long log doesn't take tens
+// of seconds, and add a load fallback that guarantees the rows appear.
+function revealRows(table) {{
+  if (table.dataset.animated) return;
+  table.dataset.animated = 'true';
+  table.querySelectorAll('tbody tr').forEach((row, i) => {{
+    setTimeout(() => row.classList.add('visible'), Math.min(i, 40) * 25);
+  }});
+}}
+
 const tableObserver = new IntersectionObserver((entries) => {{
   entries.forEach(entry => {{
-    if (entry.isIntersecting && !entry.target.dataset.animated) {{
-      entry.target.dataset.animated = 'true';
-      entry.target.querySelectorAll('tbody tr').forEach((row, i) => {{
-        setTimeout(() => row.classList.add('visible'), i * 40);
-      }});
+    if (entry.isIntersecting) {{
+      revealRows(entry.target);
       tableObserver.unobserve(entry.target);
     }}
   }});
-}}, {{ threshold: 0.05 }});
+}}, {{ threshold: 0 }});
 
 document.querySelectorAll('.log-table').forEach(el => tableObserver.observe(el));
+
+// Belt-and-suspenders: reveal any still-hidden rows shortly after load.
+window.addEventListener('load', () => setTimeout(
+  () => document.querySelectorAll('.log-table').forEach(revealRows), 600));
 </script>
 
 </body>

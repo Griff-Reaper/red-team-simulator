@@ -71,6 +71,33 @@ MITRE_ATLAS = {
     "AML.T0034.002": "Cost Harvesting: Agentic Resource Consumption",
 }
 
+# One-line, plain-language description of each ATLAS technique this suite touches,
+# so a report can explain the adversary behavior without an external ATLAS lookup
+# (parallels the OWASP remediation summaries).
+MITRE_ATLAS_DESCRIPTIONS = {
+    "AML.T0051": "Craft input that overrides or subverts the model's intended instructions.",
+    "AML.T0051.000": "Prompt injection typed directly by the user into the model.",
+    "AML.T0051.001": "Prompt injection hidden in third-party content the model later ingests "
+                     "(documents, web pages, tool output).",
+    "AML.T0053": "Abuse an agent's ability to call tools/functions to take attacker-directed actions.",
+    "AML.T0054": "Bypass the model's safety alignment to elicit restricted behavior.",
+    "AML.T0057": "Induce the model to reveal sensitive context, secrets, or hidden instructions.",
+    "AML.T0065": "Iteratively engineer prompts (often automated) that reliably defeat model defenses.",
+    "AML.T0067": "Forge authoritative-looking structures (policy files, system tags) so the model "
+                 "treats attacker input as trusted.",
+    "AML.T0068": "Hide malicious intent with encoding, rare tokens, or adversarial suffixes to evade filters.",
+    "AML.T0080.001": "Inject fabricated conversation history so the agent acts on events that never happened.",
+    "AML.T0081": "Alter the agent's configuration or instruction files to plant persistent malicious behavior.",
+    "AML.T0084.001": "Enumerate an agent's available tools and schemas to plan an abuse of them.",
+    "AML.T0086": "Exfiltrate data by coercing the agent to send it out through a legitimate tool call.",
+    "AML.T0024": "Extract training data or model internals through crafted inference-API queries.",
+    "AML.T0024.000": "Determine whether specific data was part of the model's training set.",
+    "AML.T0029": "Degrade or exhaust the model service so it can't serve legitimate users.",
+    "AML.T0034": "Drive up the victim's inference/compute spend.",
+    "AML.T0034.002": "Loop an agent through expensive tool calls or retrievals to inflate cost "
+                     "(denial of wallet).",
+}
+
 
 @dataclass
 class AttackTechnique:

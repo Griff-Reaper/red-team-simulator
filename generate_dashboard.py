@@ -577,7 +577,9 @@ def gen_table_data(results: list[dict]) -> str:
 
 def gen_framework_section(results: list) -> str:
     """Render OWASP/MITRE ATLAS coverage + actionable remediation (Strix-style)."""
-    from attack_taxonomy import framework_coverage, OWASP_LLM_2025, MITRE_ATLAS
+    from attack_taxonomy import (
+        framework_coverage, OWASP_LLM_2025, MITRE_ATLAS, MITRE_ATLAS_DESCRIPTIONS,
+    )
     from remediation import remediations_for_findings
 
     cov = framework_coverage()
@@ -595,6 +597,17 @@ def gen_framework_section(results: list) -> str:
         f'<span style="display:inline-block;margin:3px;padding:4px 10px;'
         f'border:1px solid var(--red-dim);border-radius:4px;color:var(--red);'
         f'font-size:12px">{aid} · {MITRE_ATLAS.get(aid, "")}</span>'
+        for aid in atlas["covered"]
+    )
+    # Descriptive blocks for the exercised ATLAS techniques — the ATLAS analogue of
+    # the OWASP remediation summaries, so the abbreviations are self-explanatory.
+    atlas_desc_blocks = "".join(
+        f'<div style="margin:6px 0;padding:10px 14px;background:var(--bg-card);'
+        f'border-left:3px solid var(--red-dim)">'
+        f'<span style="color:var(--red);font-weight:700;font-size:13px">{aid} &#183; '
+        f'{MITRE_ATLAS.get(aid, "")}</span>'
+        f'<div style="color:#9ab;font-size:13px;margin-top:4px;line-height:1.5">'
+        f'{MITRE_ATLAS_DESCRIPTIONS.get(aid, "")}</div></div>'
         for aid in atlas["covered"]
     )
 
@@ -624,6 +637,8 @@ def gen_framework_section(results: list) -> str:
     <div>{owasp_chips}</div>
     <div style="color:#889;font-size:13px;margin:14px 0 6px">MITRE ATLAS &#8212; {atlas["covered_count"]} techniques</div>
     <div>{atlas_chips}</div>
+    <div style="color:#889;font-size:13px;margin:18px 0 6px">MITRE ATLAS techniques &#8212; adversary behavior each ID describes</div>
+    {atlas_desc_blocks}
     <div style="color:#889;font-size:13px;margin:18px 0 6px">Actionable Remediation (successful findings)</div>
     {rem_blocks}
   </div>

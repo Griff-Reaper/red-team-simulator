@@ -75,6 +75,14 @@ def test_expansion_techniques_present_and_well_formed():
         assert tech.mitre_atlas and all(a in MITRE_ATLAS for a in tech.mitre_atlas)
 
 
+def test_every_covered_atlas_id_has_description():
+    """Every exercised ATLAS technique must carry a plain-language description."""
+    from attack_taxonomy import MITRE_ATLAS_DESCRIPTIONS
+    cov = framework_coverage()
+    for aid in cov["mitre_atlas"]["covered"]:
+        assert MITRE_ATLAS_DESCRIPTIONS.get(aid, "").strip(), f"{aid} missing description"
+
+
 def test_new_atlas_ids_registered():
     """The 9 ATLAS ids the expansion introduced must resolve to labels."""
     new_ids = {

@@ -75,6 +75,15 @@ def test_expansion_techniques_present_and_well_formed():
         assert tech.mitre_atlas and all(a in MITRE_ATLAS for a in tech.mitre_atlas)
 
 
+def test_om004_encodes_a_concrete_objective():
+    """OM-004 must encode a concrete, testable objective (system-prompt disclosure),
+    not an abstract [OBJECTIVE] placeholder that produces content-free math poetry."""
+    om = ATTACK_TECHNIQUES["OM-004"]
+    blob = f"{om.description} {om.example_prompt}".lower()
+    assert "system prompt" in blob or "hidden instruction" in blob
+    assert "[objective]" not in om.example_prompt.lower()
+
+
 def test_every_covered_atlas_id_has_description():
     """Every exercised ATLAS technique must carry a plain-language description."""
     from attack_taxonomy import MITRE_ATLAS_DESCRIPTIONS

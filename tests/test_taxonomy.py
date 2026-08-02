@@ -84,6 +84,24 @@ def test_om004_encodes_a_concrete_objective():
     assert "[objective]" not in om.example_prompt.lower()
 
 
+def test_om002_hides_a_concrete_objective():
+    """OM-002's base64 must decode to a real concrete request, not describe encoding."""
+    import base64
+    import re
+
+    om = ATTACK_TECHNIQUES["OM-002"]
+    assert "[objective]" not in om.example_prompt.lower()
+    assert "system prompt" in om.description.lower()
+    decoded = ""
+    for blob in re.findall(r"[A-Za-z0-9+/]{24,}={0,2}", om.example_prompt):
+        try:
+            decoded = base64.b64decode(blob).decode("utf-8")
+            break
+        except (ValueError, UnicodeDecodeError):
+            continue
+    assert "system prompt" in decoded.lower(), f"OM-002 base64 decoded to: {decoded!r}"
+
+
 def test_every_covered_atlas_id_has_description():
     """Every exercised ATLAS technique must carry a plain-language description."""
     from attack_taxonomy import MITRE_ATLAS_DESCRIPTIONS

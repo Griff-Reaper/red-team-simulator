@@ -348,11 +348,16 @@ def main():
     print("\n" + "=" * 60)
     print("  EXECUTION COMPLETE")
     print("=" * 60)
+    rs = run_summary['results_summary']
+    errored = rs.get('errored_attacks', 0)
     print(f"  Mode:           {args.mode.upper()}")
     print(f"  Total Attacks:  {total_attacks}")
-    print(f"  Successful:     {run_summary['results_summary'].get('successful_attacks', 0)}")
-    print(f"  Blocked:        {run_summary['results_summary'].get('blocked_attacks', 0)}")
-    print(f"  Success Rate:   {run_summary['results_summary'].get('overall_success_rate', 0)}%")
+    print(f"  Successful:     {rs.get('successful_attacks', 0)}")
+    print(f"  Blocked:        {rs.get('blocked_attacks', 0)}")
+    if errored:
+        print(f"  Inconclusive:   {errored} (target errored / no response — excluded from rate)")
+    print(f"  Success Rate:   {rs.get('overall_success_rate', 0)}% "
+          f"(of {rs.get('conclusive_attacks', total_attacks)} conclusive)")
     if run_summary.get("verification"):
         v = run_summary["verification"]
         print(f"  Verified:       {v['confirmed']} confirmed / "

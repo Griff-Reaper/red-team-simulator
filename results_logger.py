@@ -9,7 +9,7 @@ import os
 import threading
 from datetime import datetime, timezone
 from config import RESULTS_DIR, LOG_FILE, LEGACY_LOG_FILE
-from utils import log
+from utils import log, classify_outcome, OUTCOME_HIT, OUTCOME_ERROR
 
 
 class ResultsLogger:
@@ -95,6 +95,11 @@ class ResultsLogger:
         weight = severity_weights.get(severity, 2)
         impact_score = weight * 25 if success else 0  # 0-100 scale
 
+        # Canonical outcome (hit / blocked / error) persisted alongside the raw
+        # success flag, so downstream consumers never have to re-derive that an
+        # errored call is not a defensive block.
+        outcome = classify_outcome(response, success)
+
         with self._lock:
             entry = {
                 "id": len(self.results) + 1,
@@ -107,13 +112,14 @@ class ResultsLogger:
                 "attack_prompt": attack.get("generated_prompt"),
                 "response": response,
                 "success": success,
+                "outcome": outcome,
                 "impact_score": impact_score,
                 "notes": notes,
             }
             self.results.append(entry)
             self._save()
 
-        status = "HIT" if success else "BLOCKED"
+        status = {OUTCOME_HIT: "HIT", OUTCOME_ERROR: "ERROR"}.get(outcome, "BLOCKED")
         print(f"[{status}] {entry['technique_id']} → {target} | Impact: {impact_score}/100")
 
         return entry
@@ -129,43 +135,50 @@ class ResultsLogger:
         if not data:
             return {"message": "No results logged yet."}
 
+        def outcome_of(r):
+            return classify_outcome(r.get("response", ""), r.get("success", False))
+
         total = len(data)
-        successes = [r for r in data if r.get("success")]
-        failures = [r for r in data if not r.get("success")]
+        successes = [r for r in data if outcome_of(r) == OUTCOME_HIT]
+        errored = [r for r in data if outcome_of(r) == OUTCOME_ERROR]
+        # Conclusive = attacks that actually produced a defensible signal (hit or
+        # block). Success/defense rates are computed over CONCLUSIVE attacks only,
+        # so an unreachable or erroring target can never masquerade as a perfect
+        # defense by padding the "blocked" bucket.
+        conclusive = total - len(errored)
 
         # Per-target breakdown
         targets = {}
         for r in data:
             t = r.get("target", "unknown")
             if t not in targets:
-                targets[t] = {"total": 0, "hits": 0, "blocked": 0}
+                targets[t] = {"total": 0, "hits": 0, "blocked": 0, "errored": 0}
+            oc = outcome_of(r)
             targets[t]["total"] += 1
-            if r.get("success"):
-                targets[t]["hits"] += 1
-            else:
-                targets[t]["blocked"] += 1
+            targets[t]["hits" if oc == OUTCOME_HIT else "errored" if oc == OUTCOME_ERROR else "blocked"] += 1
 
         for t in targets:
+            conclusive_t = targets[t]["total"] - targets[t]["errored"]
+            targets[t]["conclusive"] = conclusive_t
             targets[t]["success_rate"] = round(
-                targets[t]["hits"] / targets[t]["total"] * 100, 1
-            )
+                targets[t]["hits"] / conclusive_t * 100, 1
+            ) if conclusive_t else 0.0
 
         # Per-category breakdown
         categories = {}
         for r in data:
             c = r.get("category", "unknown")
             if c not in categories:
-                categories[c] = {"total": 0, "hits": 0, "blocked": 0}
+                categories[c] = {"total": 0, "hits": 0, "blocked": 0, "errored": 0}
+            oc = outcome_of(r)
             categories[c]["total"] += 1
-            if r.get("success"):
-                categories[c]["hits"] += 1
-            else:
-                categories[c]["blocked"] += 1
+            categories[c]["hits" if oc == OUTCOME_HIT else "errored" if oc == OUTCOME_ERROR else "blocked"] += 1
 
         for c in categories:
+            conclusive_c = categories[c]["total"] - categories[c]["errored"]
             categories[c]["success_rate"] = round(
-                categories[c]["hits"] / categories[c]["total"] * 100, 1
-            )
+                categories[c]["hits"] / conclusive_c * 100, 1
+            ) if conclusive_c else 0.0
 
         # Per-severity breakdown
         severities = {}
@@ -174,18 +187,20 @@ class ResultsLogger:
             if s not in severities:
                 severities[s] = {"total": 0, "hits": 0}
             severities[s]["total"] += 1
-            if r.get("success"):
+            if outcome_of(r) == OUTCOME_HIT:
                 severities[s]["hits"] += 1
 
         avg_impact = round(
-            sum(r.get("impact_score", 0) for r in data) / total, 1
-        )
+            sum(r.get("impact_score", 0) for r in data if outcome_of(r) != OUTCOME_ERROR) / conclusive, 1
+        ) if conclusive else 0.0
 
         return {
             "total_attacks": total,
             "successful_attacks": len(successes),
-            "blocked_attacks": len(failures),
-            "overall_success_rate": round(len(successes) / total * 100, 1),
+            "blocked_attacks": conclusive - len(successes),
+            "errored_attacks": len(errored),
+            "conclusive_attacks": conclusive,
+            "overall_success_rate": round(len(successes) / conclusive * 100, 1) if conclusive else 0.0,
             "average_impact_score": avg_impact,
             "by_target": targets,
             "by_category": categories,

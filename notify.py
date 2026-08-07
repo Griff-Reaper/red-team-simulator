@@ -48,9 +48,14 @@ def format_discord_message(status: str, summary: dict = None, message: str = Non
                 {"name": "⏱️ Duration", "value": f"{meta.get('duration_seconds', 0)}s", "inline": True},
                 {"name": "🚨 Critical Hits", "value": str(summary.get("critical_findings", 0)), "inline": True},
             ]
+            if rs.get("errored_attacks"):
+                # Inconclusive results are not blocks — flag them so the "all clear"
+                # is never read as "every attack was defended".
+                fields.insert(3, {"name": "◽ Inconclusive",
+                                  "value": f"{rs['errored_attacks']} (errored)", "inline": True})
         else:
             fields = []
-    
+
     elif status == "critical":
         color = 16711680  # Red
         title = "🚨 CRITICAL VULNERABILITIES DETECTED"
@@ -128,6 +133,10 @@ def format_slack_message(status: str, summary: dict = None, message: str = None)
                 {"title": "Duration", "value": f"{meta.get('duration_seconds', 0)}s", "short": True},
                 {"title": "Critical Hits", "value": str(summary.get("critical_findings", 0)), "short": True},
             ]
+            if rs.get("errored_attacks"):
+                # Inconclusive results are not blocks — surface them alongside the counts.
+                fields.insert(3, {"title": "Inconclusive",
+                                  "value": f"{rs['errored_attacks']} (errored)", "short": True})
         else:
             fields = []
     

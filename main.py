@@ -303,7 +303,10 @@ def option_view_summary(logger: ResultsLogger):
     print(f"  Total Attacks:    {summary['total_attacks']}")
     print(f"  Successful:       {summary['successful_attacks']}")
     print(f"  Blocked:          {summary['blocked_attacks']}")
-    print(f"  Success Rate:     {summary['overall_success_rate']}%")
+    if summary.get("errored_attacks"):
+        print(f"  Inconclusive:     {summary['errored_attacks']} (errored / no response — excluded from rate)")
+    print(f"  Success Rate:     {summary['overall_success_rate']}% "
+          f"(of {summary.get('conclusive_attacks', summary['total_attacks'])} conclusive)")
     print(f"  Avg Impact Score: {summary['average_impact_score']}/100")
 
     print("\n  --- By Target ---")

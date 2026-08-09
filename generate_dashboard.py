@@ -19,11 +19,62 @@ import os
 import sys
 import argparse
 import webbrowser
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from collections import defaultdict
 from html import escape
 from chain_dashboard import extract_chain_results, compute_chain_stats, gen_chain_section, CHAIN_CSS
 from utils import classify_outcome, OUTCOME_HIT, OUTCOME_BLOCKED, OUTCOME_ERROR
+
+
+# ── Time-window tabs ────────────────────────────────────────────────────────
+# Each window renders a FULL, independently-scored dashboard over its slice of
+# the log — so the exact same Python scoring/rendering runs for every window and
+# there is zero client-side re-computation. The on-page "tabs" are just links
+# between the generated files. index.html is the complete (All Time) report, so
+# the canonical dashboard URL is unchanged and fully backward compatible.
+DASHBOARD_WINDOWS = [
+    {"id": "latest", "label": "Latest Session", "file": "index-latest.html"},
+    {"id": "7d",     "label": "Last 7 Days",    "file": "index-7d.html"},
+    {"id": "30d",    "label": "Last 30 Days",   "file": "index-30d.html"},
+    {"id": "all",    "label": "All Time",       "file": "index.html"},
+]
+_WINDOW_FILE = {w["id"]: w["file"] for w in DASHBOARD_WINDOWS}
+
+
+def _parse_ts(record: dict):
+    """Parse a record's ISO timestamp to an aware datetime, or None if unusable."""
+    ts = record.get("timestamp", "")
+    try:
+        return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except (ValueError, AttributeError, TypeError):
+        return None
+
+
+def filter_results_for_window(results: list, window_id: str, now: datetime = None) -> list:
+    """Slice the log to a time window.
+
+    ``all`` returns everything (including records with unparseable timestamps, so
+    the complete report never silently drops rows). ``latest`` is the most recent
+    UTC calendar day present — matching the session-by-date grouping the dashboard
+    already uses. ``7d``/``30d`` are rolling windows ending now.
+    """
+    if window_id == "all":
+        return list(results)
+
+    now = now or datetime.now(timezone.utc)
+    dated = [(r, t) for r in results if (t := _parse_ts(r)) is not None]
+
+    if window_id == "latest":
+        if not dated:
+            return []
+        latest_day = max(t.date() for _, t in dated)
+        return [r for r, t in dated if t.date() == latest_day]
+
+    days = {"7d": 7, "30d": 30}.get(window_id)
+    if days is None:
+        return list(results)
+    cutoff = now - timedelta(days=days)
+    return [r for r, t in dated if t >= cutoff]
 
 
 # ── Data Processing ───────────────────────────────────────────────────────────
@@ -432,6 +483,29 @@ def gen_key_insight(by_severity: dict) -> str:
         return (f'<strong style="color: var(--orange);">{high_hits} HIGH severity attack(s) succeeded</strong> '
                 '&#8212; significant vulnerabilities detected that could lead to meaningful safety bypasses. '
                 'Review and harden defense layers for these attack vectors.')
+
+
+def gen_window_tabs(active_window: str, window_counts: dict) -> str:
+    """Time-window tab bar. Each tab links to that window's generated page and
+    shows its attack count; the active window is highlighted. Returns '' when
+    counts aren't supplied (single-file / legacy generation)."""
+    if not window_counts:
+        return ""
+    tabs = []
+    for w in DASHBOARD_WINDOWS:
+        active = " active" if w["id"] == active_window else ""
+        count = window_counts.get(w["id"], 0)
+        tabs.append(
+            f'<a class="window-tab{active}" href="{w["file"]}">'
+            f'<span class="window-tab-label">{escape(w["label"])}</span>'
+            f'<span class="window-tab-count">{count}</span></a>'
+        )
+    return (
+        '  <nav class="window-tabs animate delay-1" aria-label="Report time window">\n'
+        '    <span class="window-tabs-caption">VIEW WINDOW</span>\n'
+        f'    {"".join(tabs)}\n'
+        '  </nav>'
+    )
 
 
 def gen_data_quality_banner(stats: dict) -> str:
@@ -919,19 +993,116 @@ def gen_defense_section(stats: dict) -> str:
 '''
 
 
-def generate_html(stats: dict, results: list[dict]) -> str:
-    """Generate the complete dashboard HTML."""
-    
+def gen_report_body(stats, scorecard, data_quality_banner, target_boxes, defense_section,
+                    category_bars, severity_cells, key_insight, chain_section, finding_cards) -> str:
+    """The window-scoped report body (everything between the header tabs and the
+    global framework-coverage section). Extracted so an empty window can swap in a
+    clean 'no data' body instead of a misleading 0%/A+ scorecard."""
+    return f'''{data_quality_banner}
+{scorecard}
+
+  <!-- SUMMARY STATS -->
+  <div class="stats-grid animate delay-2">
+    <div class="stat-card">
+      <div class="stat-label">Total Attacks</div>
+      <div class="stat-value">{stats['total']}</div>
+      <div class="stat-detail">{stats['num_techniques']} techniques &times; {stats['num_targets']} targets</div>
+    </div>
+    <div class="stat-card danger">
+      <div class="stat-label">Successful Hits</div>
+      <div class="stat-value">{stats['hits']}</div>
+      <div class="stat-detail">Bypassed defenses</div>
+    </div>
+    <div class="stat-card success">
+      <div class="stat-label">Blocked</div>
+      <div class="stat-value">{stats['blocked']}</div>
+      <div class="stat-detail">Defenses held</div>
+    </div>
+    <div class="stat-card warning">
+      <div class="stat-label">Success Rate</div>
+      <div class="stat-value">{stats['success_rate']}%</div>
+      <div class="stat-detail">Attack effectiveness</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Avg Impact</div>
+      <div class="stat-value">{stats['avg_impact']}</div>
+      <div class="stat-detail">Score out of 100</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Sessions</div>
+      <div class="stat-value">{stats['num_sessions']}</div>
+      <div class="stat-detail">Test runs completed</div>
+    </div>
+  </div>
+
+  <!-- TARGET COMPARISON -->
+  <div class="section-title animate delay-3">TARGET COMPARISON</div>
+  <div class="target-comparison animate delay-3">
+{target_boxes}
+  </div>
+{defense_section}
+
+  <!-- CATEGORY BREAKDOWN + SEVERITY -->
+  <div class="two-col animate delay-4">
+    <div class="panel">
+      <div class="section-title">ATTACK CATEGORIES</div>
+      <div class="bar-chart">
+{category_bars}
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="section-title">SEVERITY MATRIX</div>
+      <div class="severity-grid">
+{severity_cells}
+      </div>
+
+      <div style="margin-top: 28px; padding: 16px; background: #06060c; border: 1px solid var(--border);">
+        <div style="font-family: 'Chakra Petch', sans-serif; font-size: 10px; letter-spacing: 2px; color: var(--text-muted); margin-bottom: 10px;">KEY INSIGHT</div>
+        <div style="font-family: 'Rajdhani', sans-serif; font-size: 14px; color: var(--text-dim); line-height: 1.6;">
+          {key_insight}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MULTI-TURN ESCALATION CHAINS -->
+{chain_section}
+
+  <!-- SUCCESSFUL ATTACKS / FINDINGS -->
+  <div class="section-title animate delay-5">SUCCESSFUL ATTACKS &#8212; DETAILED FINDINGS</div>
+  <div class="findings animate delay-5">
+{finding_cards}
+  </div>'''
+
+
+def gen_empty_window_body(window_label: str) -> str:
+    """Body shown when the selected time window has no attacks — honest and calm,
+    not a 0-attack 'A+ / SECURE' scorecard."""
+    return f'''
+  <div class="empty-window animate delay-2">
+    <div class="empty-window-icon">&#9675;</div>
+    <div class="empty-window-title">NO ATTACKS IN THIS WINDOW</div>
+    <div class="empty-window-text">
+      No red-team attacks were recorded for <strong>{escape(window_label)}</strong>.
+      Run a fresh assessment, or switch to a wider window above to see historical results.
+    </div>
+  </div>'''
+
+
+def generate_html(stats: dict, results: list[dict], active_window: str = "all",
+                  window_counts: dict = None) -> str:
+    """Generate the complete dashboard HTML.
+
+    ``active_window`` / ``window_counts`` drive the time-window tab bar; when
+    counts are omitted the tabs are hidden (single-file generation). An empty
+    window renders a clean 'no data' body instead of a misleading 0%/A+ report.
+    """
+
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    
-    category_bars = gen_category_bars(stats["by_category"])
-    severity_cells = gen_severity_cells(stats["by_severity"])
-    key_insight = gen_key_insight(stats["by_severity"])
-    target_boxes = gen_target_boxes(stats["by_target"])
-    finding_cards = gen_finding_cards(stats["findings"])
-    framework_section = gen_framework_section(results)
-    scorecard = gen_scorecard(stats)
-    defense_section = gen_defense_section(stats)
+
+    window_tabs = gen_window_tabs(active_window, window_counts)
+    data_quality_banner = gen_data_quality_banner(stats)
     table_data = gen_table_data(results)
 
     # Timestamps for the header
@@ -939,15 +1110,38 @@ def generate_html(stats: dict, results: list[dict]) -> str:
     first_run = fmt_ts(stats["first_test"], with_time=False)
     last_run = fmt_ts(stats["last_test"])
 
-    data_quality_banner = gen_data_quality_banner(stats)
-
-    # Multi-turn chain processing
-    chain_results = extract_chain_results(results)
-    chain_stats = compute_chain_stats(chain_results)
-    chain_section = gen_chain_section(chain_stats, chain_results)
-    chain_css = CHAIN_CSS if chain_stats.get("has_chains") else ""
+    framework_section = gen_framework_section(results)
     eval_css = EVAL_CSS
-    
+
+    if not results:
+        # Empty window (e.g. no runs in the last 7 days). Never render the normal
+        # scorecard/sections — a 0-attack "A+ / SECURE" would badly mislead.
+        window_label = next((w["label"] for w in DASHBOARD_WINDOWS if w["id"] == active_window), "this window")
+        report_body = gen_empty_window_body(window_label)
+        chain_css = ""
+    else:
+        category_bars = gen_category_bars(stats["by_category"])
+        severity_cells = gen_severity_cells(stats["by_severity"])
+        key_insight = gen_key_insight(stats["by_severity"])
+        target_boxes = gen_target_boxes(stats["by_target"])
+        finding_cards = gen_finding_cards(stats["findings"])
+        scorecard = gen_scorecard(stats)
+        defense_section = gen_defense_section(stats)
+
+        # Multi-turn chain processing
+        chain_results = extract_chain_results(results)
+        chain_stats = compute_chain_stats(chain_results)
+        chain_section = gen_chain_section(chain_stats, chain_results)
+        chain_css = CHAIN_CSS if chain_stats.get("has_chains") else ""
+
+        report_body = gen_report_body(
+            stats=stats, scorecard=scorecard, data_quality_banner=data_quality_banner,
+            target_boxes=target_boxes, defense_section=defense_section,
+            category_bars=category_bars, severity_cells=severity_cells,
+            key_insight=key_insight, chain_section=chain_section,
+            finding_cards=finding_cards,
+        )
+
     return f'''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1114,6 +1308,93 @@ body::before {{
   color: var(--cyan);
   font-weight: 400;
 }}
+
+/* === WINDOW TABS === */
+.window-tabs {{
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 24px 0 0 0;
+  padding: 10px 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}}
+
+.window-tabs-caption {{
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--text-muted);
+  margin-right: 6px;
+  padding-left: 4px;
+}}
+
+.window-tab {{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 12px;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+  text-decoration: none;
+  transition: border-color .18s, color .18s, background .18s;
+}}
+
+.window-tab:hover {{
+  color: var(--cyan);
+  border-color: var(--cyan-dim);
+  background: var(--cyan-glow);
+}}
+
+.window-tab.active {{
+  color: var(--bg-primary);
+  background: var(--cyan);
+  border-color: var(--cyan);
+  font-weight: 700;
+}}
+
+.window-tab-count {{
+  font-size: 10px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.10);
+  color: inherit;
+}}
+
+.window-tab.active .window-tab-count {{ background: rgba(0,0,0,0.22); }}
+
+/* === EMPTY WINDOW STATE === */
+.empty-window {{
+  margin: 40px 0;
+  padding: 56px 32px;
+  text-align: center;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: var(--bg-card);
+}}
+.empty-window-icon {{ font-size: 40px; color: var(--text-muted); line-height: 1; }}
+.empty-window-title {{
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 16px;
+  letter-spacing: 3px;
+  color: var(--text-dim);
+  margin-top: 14px;
+}}
+.empty-window-text {{
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 15px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  max-width: 520px;
+  margin: 12px auto 0;
+}}
+.empty-window-text strong {{ color: var(--cyan); }}
 
 /* === DATA QUALITY BANNER === */
 .data-quality-banner {{
@@ -1809,82 +2090,8 @@ body::before {{
       <div class="session-item">TARGETS: <strong>{stats['num_targets']}</strong></div>
     </div>
   </header>
-{data_quality_banner}
-{scorecard}
-
-  <!-- SUMMARY STATS -->
-  <div class="stats-grid animate delay-2">
-    <div class="stat-card">
-      <div class="stat-label">Total Attacks</div>
-      <div class="stat-value">{stats['total']}</div>
-      <div class="stat-detail">{stats['num_techniques']} techniques &times; {stats['num_targets']} targets</div>
-    </div>
-    <div class="stat-card danger">
-      <div class="stat-label">Successful Hits</div>
-      <div class="stat-value">{stats['hits']}</div>
-      <div class="stat-detail">Bypassed defenses</div>
-    </div>
-    <div class="stat-card success">
-      <div class="stat-label">Blocked</div>
-      <div class="stat-value">{stats['blocked']}</div>
-      <div class="stat-detail">Defenses held</div>
-    </div>
-    <div class="stat-card warning">
-      <div class="stat-label">Success Rate</div>
-      <div class="stat-value">{stats['success_rate']}%</div>
-      <div class="stat-detail">Attack effectiveness</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Avg Impact</div>
-      <div class="stat-value">{stats['avg_impact']}</div>
-      <div class="stat-detail">Score out of 100</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Sessions</div>
-      <div class="stat-value">{stats['num_sessions']}</div>
-      <div class="stat-detail">Test runs completed</div>
-    </div>
-  </div>
-
-  <!-- TARGET COMPARISON -->
-  <div class="section-title animate delay-3">TARGET COMPARISON</div>
-  <div class="target-comparison animate delay-3">
-{target_boxes}
-  </div>
-{defense_section}
-
-  <!-- CATEGORY BREAKDOWN + SEVERITY -->
-  <div class="two-col animate delay-4">
-    <div class="panel">
-      <div class="section-title">ATTACK CATEGORIES</div>
-      <div class="bar-chart">
-{category_bars}
-      </div>
-    </div>
-
-    <div class="panel">
-      <div class="section-title">SEVERITY MATRIX</div>
-      <div class="severity-grid">
-{severity_cells}
-      </div>
-
-      <div style="margin-top: 28px; padding: 16px; background: #06060c; border: 1px solid var(--border);">
-        <div style="font-family: 'Chakra Petch', sans-serif; font-size: 10px; letter-spacing: 2px; color: var(--text-muted); margin-bottom: 10px;">KEY INSIGHT</div>
-        <div style="font-family: 'Rajdhani', sans-serif; font-size: 14px; color: var(--text-dim); line-height: 1.6;">
-          {key_insight}
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- MULTI-TURN ESCALATION CHAINS -->
-{chain_section}
-
-  <!-- SUCCESSFUL ATTACKS / FINDINGS -->
-  <div class="section-title animate delay-5">SUCCESSFUL ATTACKS &#8212; DETAILED FINDINGS</div>
-  <div class="findings animate delay-5">
-{finding_cards}
-  </div>
+{window_tabs}
+{report_body}
 {framework_section}
 
   <!-- FULL ATTACK LOG -->
@@ -1921,7 +2128,7 @@ body::before {{
 const results = {table_data};
 
 const tbody = document.getElementById('logBody');
-results.forEach((r, i) => {{
+if (tbody) results.forEach((r, i) => {{
   const row = document.createElement('tr');
   const resultTag = r.success ? '<span class="tag hit">HIT</span>' : 
                     r.filtered ? '<span class="tag filtered">FILTERED</span>' : 
@@ -2006,6 +2213,8 @@ document.querySelectorAll('.severity-hits').forEach(el => {{
 
 document.querySelectorAll('.target-rate').forEach(el => {{
   const text = el.textContent.trim();
+  // A fully-inconclusive target shows "N/A" — leave it untouched, don't animate to NaN%.
+  if (isNaN(parseFloat(text))) return;
   el.dataset.target = text.replace('%', '');
   el.dataset.suffix = '%';
   el.textContent = '0%';
@@ -2103,30 +2312,36 @@ def build_dashboard(input_path: str = "results/attack_log.jsonl",
     results = load_results(input_path)
     print(f"[*] Loaded {len(results)} attack results")
 
-    print("[*] Computing statistics...")
-    stats = compute_stats(results)
-    print(f"    Total: {stats['total']} | Hits: {stats['hits']} | Rate: {stats['success_rate']}%")
-    print(f"    Targets: {stats['num_targets']} | Techniques: {stats['num_techniques']} | Sessions: {stats['num_sessions']}")
-
-    print("[*] Generating dashboard HTML...")
-    html = generate_html(stats, results)
-
     os.makedirs(output_dir, exist_ok=True)
-    output_path = os.path.join(output_dir, "index.html")
+    now = datetime.now(timezone.utc)
 
-    with open(output_path, "w", encoding="utf-8") as f:
-        f.write(html)
+    # One full, independently-scored dashboard per time window. index.html is the
+    # complete (All Time) report — the canonical URL is unchanged — and the tabs
+    # link to the narrower windows for a fresh, recent-only view.
+    window_results = {w["id"]: filter_results_for_window(results, w["id"], now) for w in DASHBOARD_WINDOWS}
+    window_counts = {wid: len(rs) for wid, rs in window_results.items()}
 
-    abs_path = os.path.abspath(output_path)
-    size_kb = os.path.getsize(output_path) / 1024
-    print(f"[+] Dashboard generated: {abs_path} ({size_kb:.1f} KB)")
-    print(f"[+] Open in browser or push to GitHub Pages!")
+    print("[*] Generating window dashboards...")
+    index_path = os.path.join(output_dir, "index.html")
+    for w in DASHBOARD_WINDOWS:
+        rs = window_results[w["id"]]
+        stats = compute_stats(rs)
+        html = generate_html(stats, rs, active_window=w["id"], window_counts=window_counts)
+        path = os.path.join(output_dir, w["file"])
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(html)
+        size_kb = os.path.getsize(path) / 1024
+        print(f"    [+] {w['label']:<16} {w['file']:<20} {len(rs):>5} attacks  ({size_kb:.1f} KB)")
+
+    abs_index = os.path.abspath(index_path)
+    print(f"[+] Dashboard generated: {abs_index}")
+    print(f"[+] Open in browser or push to GitHub Pages! (tabs: Latest / 7d / 30d / All Time)")
 
     if open_browser:
         # Auto-open the exact file just written so a stale copy is never mistaken
         # for fresh output. Never fatal (headless/no-display environments).
         try:
-            webbrowser.open(f"file://{abs_path}")
+            webbrowser.open(f"file://{abs_index}")
         except Exception as e:
             print(f"[!] Could not auto-open browser: {e}")
 
@@ -2135,7 +2350,7 @@ def build_dashboard(input_path: str = "results/attack_log.jsonl",
         print(f"      python generate_dashboard.py -o docs/")
         print(f"      Then enable GitHub Pages from 'docs/' folder in repo settings.")
 
-    return output_path
+    return index_path
 
 
 if __name__ == "__main__":

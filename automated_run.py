@@ -218,10 +218,38 @@ def main():
         action="store_true",
         help="Open the regenerated dashboard in a browser after the run (local use)"
     )
-    
+    parser.add_argument(
+        "--archive-log",
+        action="store_true",
+        help="Archive the current attack log to results/archive/ and start a clean "
+             "one, then exit. Use to reset before a fresh engagement so the "
+             "dashboard reflects only new runs (old data stays recoverable)."
+    )
+
     args = parser.parse_args()
-    
+
     print_banner()
+
+    # Standalone maintenance action: archive & reset, then exit without running.
+    if args.archive_log:
+        logger = ResultsLogger()
+        kept = len(logger.results)
+        dest = logger.archive_and_reset()
+        if dest:
+            print(f"\n[✓] Archived {kept} record(s) to: {dest}")
+            print("[✓] Live log reset — the next run and dashboard start fresh.")
+            if not args.no_dashboard:
+                try:
+                    import generate_dashboard
+                    from config import LOG_FILE
+                    generate_dashboard.build_dashboard(input_path=LOG_FILE, output_dir="docs")
+                    print("[✓] Dashboard rebuilt (now empty until the next run).")
+                except Exception as e:
+                    print(f"[!] Dashboard rebuild skipped: {e}")
+        else:
+            print("\n[*] Nothing to archive — the log is already empty.")
+        sys.exit(0)
+
     print(f"\n[*] Execution Mode: {args.mode.upper()}")
     print(f"[*] Targets: {', '.join(args.targets)}")
     print(f"[*] Start Time: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}")

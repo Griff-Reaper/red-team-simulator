@@ -8,7 +8,8 @@ import json
 import os
 import threading
 from datetime import datetime, timezone
-from config import RESULTS_DIR, LOG_FILE, LEGACY_LOG_FILE
+from typing import Optional
+from config import RESULTS_DIR, LOG_FILE, LEGACY_LOG_FILE, ARCHIVE_DIR
 from utils import log, classify_outcome, OUTCOME_HIT, OUTCOME_ERROR
 
 
@@ -214,6 +215,46 @@ class ResultsLogger:
             r for r in data
             if r.get("success") and r.get("severity") in ("high", "critical")
         ]
+
+    def archive_and_reset(self) -> Optional[str]:
+        """Archive the current log and start a clean one.
+
+        Moves ``attack_log.jsonl`` to ``results/archive/attack_log_<UTC-date>.jsonl``
+        (with a numeric suffix if one already exists for today) and empties the
+        live log, so a fresh engagement — and every dashboard built after it —
+        reflects only new runs while the old history stays recoverable. Returns the
+        archive path, or ``None`` when there was nothing to archive.
+        """
+        with self._lock:
+            if not self.results:
+                # Nothing meaningful to keep; clear any stray empty file so a
+                # subsequent run starts genuinely clean.
+                if os.path.exists(self.log_file):
+                    try:
+                        os.remove(self.log_file)
+                    except OSError:
+                        pass
+                return None
+
+            os.makedirs(ARCHIVE_DIR, exist_ok=True)
+            date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            dest = os.path.join(ARCHIVE_DIR, f"attack_log_{date}.jsonl")
+            n = 1
+            while os.path.exists(dest):
+                dest = os.path.join(ARCHIVE_DIR, f"attack_log_{date}_{n}.jsonl")
+                n += 1
+
+            if os.path.exists(self.log_file):
+                # Atomic move preserves the exact on-disk bytes (incl. any records
+                # not in memory) rather than re-serializing.
+                os.replace(self.log_file, dest)
+            else:
+                with open(dest, "w", encoding="utf-8") as f:
+                    for entry in self.results:
+                        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+            self.results = []
+            return dest
 
     def export_report(self, filename: str = None) -> str:
         """Export a full report to JSON."""

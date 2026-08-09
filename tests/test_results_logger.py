@@ -1,7 +1,9 @@
 """Tests for ResultsLogger: thread-safety, atomic JSONL writes, corrupt recovery."""
 
+import os
 import threading
 
+import results_logger as rl
 from results_logger import ResultsLogger
 
 ATTACK = {
@@ -89,3 +91,34 @@ def test_summary_breakdowns(tmp_path):
     assert summary["total_attacks"] == 2
     assert summary["successful_attacks"] == 1
     assert summary["by_target"]["claude"]["hits"] == 1
+
+
+def test_archive_and_reset_moves_log_and_clears(tmp_path, monkeypatch):
+    monkeypatch.setattr(rl, "ARCHIVE_DIR", str(tmp_path / "archive"))
+    lg = _logger_at(tmp_path)
+    lg.log_result(ATTACK, "bedrock", "sure", success=True, notes="")
+    lg.log_result(ATTACK, "bedrock", "no", success=False, notes="")
+
+    dest = lg.archive_and_reset()
+
+    assert dest and os.path.exists(dest)
+    assert len(ResultsLogger._read_jsonl(dest)) == 2   # both records preserved
+    assert lg.results == []                             # live log emptied
+    assert not os.path.exists(lg.log_file)              # live file removed
+
+
+def test_archive_and_reset_empty_is_noop(tmp_path, monkeypatch):
+    monkeypatch.setattr(rl, "ARCHIVE_DIR", str(tmp_path / "archive"))
+    lg = _logger_at(tmp_path)
+    assert lg.archive_and_reset() is None
+
+
+def test_archive_same_day_gets_unique_names(tmp_path, monkeypatch):
+    monkeypatch.setattr(rl, "ARCHIVE_DIR", str(tmp_path / "archive"))
+    lg = _logger_at(tmp_path)
+    lg.log_result(ATTACK, "bedrock", "a", success=True, notes="")
+    d1 = lg.archive_and_reset()
+    lg.log_result(ATTACK, "bedrock", "b", success=True, notes="")
+    d2 = lg.archive_and_reset()
+    assert d1 != d2                                     # no clobbering same-day
+    assert os.path.exists(d1) and os.path.exists(d2)

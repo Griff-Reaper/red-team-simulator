@@ -1,0 +1,1204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RED TEAM &#8212; Attack Simulator Report</title>
+<link href="https://fonts.googleapis.com/css2?family=Audiowide&family=Chakra+Petch:wght@400;600;700&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg-primary: #0a0a0f;
+  --bg-secondary: #0f1018;
+  --bg-card: #12131e;
+  --bg-card-hover: #181a28;
+  --cyan: #00f0ff;
+  --cyan-dim: #00f0ff44;
+  --cyan-glow: #00f0ff22;
+  --red: #ff2244;
+  --red-dim: #ff224444;
+  --red-glow: #ff224422;
+  --green: #00ff88;
+  --green-dim: #00ff8844;
+  --yellow: #ffcc00;
+  --yellow-dim: #ffcc0044;
+  --orange: #ff8800;
+  --text-primary: #eef1fa;
+  --text-dim: #a6accf;
+  --text-muted: #7a80a8;
+  --border: #1e2038;
+  --border-glow: #00f0ff15;
+  --scanline: rgba(0, 240, 255, 0.03);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: 'Rajdhani', sans-serif;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+body::after {
+  content: '';
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, var(--scanline) 2px, var(--scanline) 4px);
+  pointer-events: none;
+  z-index: 1000;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background-image: radial-gradient(circle at 1px 1px, #ffffff06 1px, transparent 0);
+  background-size: 40px 40px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 40px 24px;
+  position: relative;
+  z-index: 1;
+}
+
+/* === HEADER === */
+.header {
+  text-align: center;
+  margin-bottom: 60px;
+  position: relative;
+}
+
+.header::before {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 600px; height: 600px;
+  background: radial-gradient(circle, var(--cyan-glow) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.badge {
+  display: inline-block;
+  padding: 6px 18px;
+  border: 1px solid var(--red);
+  color: var(--red);
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 11px;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  margin-bottom: 20px;
+  position: relative;
+  overflow: hidden;
+  white-space: nowrap;
+  border-right: 2px solid var(--cyan);
+  width: 0;
+  animation: typewriter 2s steps(45) 0.5s forwards, blink 0.8s step-end 2.5s 3, pulse-border 2s ease-in-out infinite 3s;
+}
+
+@keyframes pulse-border {
+  0%, 100% { border-color: var(--red); box-shadow: 0 0 10px var(--red-glow); }
+  50% { border-color: var(--red-dim); box-shadow: 0 0 20px var(--red-dim); }
+}
+
+.header h1 {
+  font-family: 'Audiowide', sans-serif;
+  font-weight: 900;
+  font-size: clamp(42px, 6vw, 72px);
+  letter-spacing: 6px;
+  line-height: 1.1;
+  background: linear-gradient(180deg, #ffffff 0%, var(--cyan) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 30px var(--cyan-glow));
+  margin-bottom: 12px;
+  animation: glitchBig 3s ease-in-out infinite 1s;
+}
+
+.header h1:hover {
+  animation: glitch 0.3s ease-in-out infinite;
+}
+
+.header-sub {
+  font-family: 'Chakra Petch', sans-serif;
+  color: var(--text-dim);
+  font-size: 14px;
+  letter-spacing: 3px;
+}
+
+.header-meta {
+  margin-top: 16px;
+  font-family: 'Chakra Petch', sans-serif;
+  color: var(--text-muted);
+  font-size: 12px;
+  letter-spacing: 1px;
+}
+
+/* === SESSION BANNER === */
+.session-banner {
+  display: flex;
+  justify-content: center;
+  gap: 32px;
+  margin-top: 20px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.session-item {
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 1px;
+}
+
+.session-item strong {
+  color: var(--cyan);
+  font-weight: 400;
+}
+
+/* === WINDOW TABS === */
+.window-tabs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 24px 0 0 0;
+  padding: 10px 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.window-tabs-caption {
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--text-muted);
+  margin-right: 6px;
+  padding-left: 4px;
+}
+
+.window-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 12px;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+  text-decoration: none;
+  transition: border-color .18s, color .18s, background .18s;
+}
+
+.window-tab:hover {
+  color: var(--cyan);
+  border-color: var(--cyan-dim);
+  background: var(--cyan-glow);
+}
+
+.window-tab.active {
+  color: var(--bg-primary);
+  background: var(--cyan);
+  border-color: var(--cyan);
+  font-weight: 700;
+}
+
+.window-tab-count {
+  font-size: 10px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.10);
+  color: inherit;
+}
+
+.window-tab.active .window-tab-count { background: rgba(0,0,0,0.22); }
+
+/* === EMPTY WINDOW STATE === */
+.empty-window {
+  margin: 40px 0;
+  padding: 56px 32px;
+  text-align: center;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: var(--bg-card);
+}
+.empty-window-icon { font-size: 40px; color: var(--text-muted); line-height: 1; }
+.empty-window-title {
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 16px;
+  letter-spacing: 3px;
+  color: var(--text-dim);
+  margin-top: 14px;
+}
+.empty-window-text {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 15px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  max-width: 520px;
+  margin: 12px auto 0;
+}
+.empty-window-text strong { color: var(--cyan); }
+
+/* === DATA QUALITY BANNER === */
+.data-quality-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin: 24px 0 0 0;
+  padding: 14px 18px;
+  background: rgba(255, 165, 0, 0.06);
+  border: 1px solid var(--orange);
+  border-left-width: 4px;
+  border-radius: 4px;
+}
+
+.data-quality-banner .dq-tag {
+  flex-shrink: 0;
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--orange);
+  white-space: nowrap;
+  padding-top: 1px;
+}
+
+.data-quality-banner .dq-text {
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+
+.data-quality-banner .dq-text strong { color: var(--text-primary); font-weight: 700; }
+
+.target-rate-note {
+  font-family: 'Chakra Petch', sans-serif;
+  letter-spacing: 1px;
+  margin-top: -6px;
+  margin-bottom: 6px;
+}
+
+/* === STAT CARDS === */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 48px;
+}
+
+.stat-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  padding: 24px;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s ease;
+  opacity: 0;
+  animation: scaleIn 0.5s ease forwards;
+}
+
+.stat-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 2px;
+  background: var(--cyan);
+  opacity: 0.6;
+}
+
+.stat-card:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--cyan-dim);
+  transform: translateY(-2px);
+}
+
+.stat-card.danger::before { background: var(--red); }
+.stat-card.success::before { background: var(--green); }
+.stat-card.warning::before { background: var(--yellow); }
+
+.stats-grid .stat-card:nth-child(1) { animation-delay: 0.3s; }
+.stats-grid .stat-card:nth-child(2) { animation-delay: 0.45s; }
+.stats-grid .stat-card:nth-child(3) { animation-delay: 0.6s; }
+.stats-grid .stat-card:nth-child(4) { animation-delay: 0.75s; }
+.stats-grid .stat-card:nth-child(5) { animation-delay: 0.9s; }
+.stats-grid .stat-card:nth-child(6) { animation-delay: 1.05s; }
+
+.stat-label {
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 11px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+
+.stat-value {
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 36px;
+  font-weight: 700;
+  color: var(--cyan);
+}
+
+.stat-card.danger .stat-value { color: var(--red); }
+.stat-card.success .stat-value { color: var(--green); }
+.stat-card.warning .stat-value { color: var(--yellow); }
+
+.stat-detail {
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+/* === SECTION TITLES === */
+.section-title {
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 4px;
+  color: var(--cyan);
+  margin-bottom: 24px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.section-title::before {
+  content: '//';
+  color: var(--text-muted);
+  font-family: 'Chakra Petch', sans-serif;
+}
+
+/* === LAYOUT === */
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-bottom: 48px;
+}
+
+@media (max-width: 900px) {
+  .two-col { grid-template-columns: 1fr; }
+  .target-comparison { flex-direction: column; }
+  .session-banner { flex-direction: column; align-items: center; gap: 8px; }
+}
+
+.panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  padding: 28px;
+}
+
+/* === TARGET COMPARISON === */
+.target-comparison {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 12px;
+  margin-bottom: 48px;
+}
+
+.target-box {
+  flex: 1;
+  padding: 32px;
+  position: relative;
+  overflow: hidden;
+  opacity: 0;
+}
+
+.target-box.azure {
+  background: linear-gradient(135deg, #0a1628 0%, var(--bg-card) 100%);
+  border: 1px solid #1a3a6a44;
+}
+
+.target-box.claude {
+  background: linear-gradient(135deg, #1a0a18 0%, var(--bg-card) 100%);
+  border: 1px solid #6a1a4a44;
+}
+
+.target-box.bedrock {
+  background: linear-gradient(135deg, #1a1206 0%, var(--bg-card) 100%);
+  border: 1px solid #ffab2e44;
+}
+
+.target-box.bedrock-guardrails {
+  background: linear-gradient(135deg, #140d04 0%, var(--bg-card) 100%);
+  border: 1px solid #d97a1a44;
+}
+
+.target-box.bedrock-nemo {
+  background: linear-gradient(135deg, #06201d 0%, var(--bg-card) 100%);
+  border: 1px solid #2ec4b644;
+}
+
+.target-box.azure.visible { animation: fadeInLeft 0.7s ease forwards; }
+.target-box.claude.visible { animation: fadeInRight 0.7s ease forwards 0.2s; }
+.target-box.bedrock.visible { animation: fadeInLeft 0.7s ease forwards 0.1s; }
+.target-box.bedrock-guardrails.visible { animation: fadeInRight 0.7s ease forwards 0.3s; }
+.target-box.bedrock-nemo.visible { animation: fadeInLeft 0.7s ease forwards 0.4s; }
+
+.target-name {
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  margin-bottom: 6px;
+}
+
+.target-box.azure .target-name { color: #4488ff; }
+.target-box.claude .target-name { color: #cc88ff; }
+.target-box.bedrock .target-name { color: #ffab2e; }
+.target-box.bedrock-guardrails .target-name { color: #d97a1a; }
+.target-box.bedrock-nemo .target-name { color: #2ec4b6; }
+
+.target-rate {
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 48px;
+  font-weight: 900;
+  margin: 16px 0;
+}
+
+.target-box.azure .target-rate { color: #4488ff; }
+.target-box.claude .target-rate { color: #cc88ff; }
+.target-box.bedrock .target-rate { color: #ffab2e; }
+.target-box.bedrock-guardrails .target-rate { color: #d97a1a; }
+.target-box.bedrock-nemo .target-rate { color: #2ec4b6; }
+
+.target-detail {
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.8;
+}
+
+.target-defense {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 13px;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+/* === BAR CHARTS === */
+.bar-chart { display: flex; flex-direction: column; gap: 16px; }
+
+.bar-row { display: flex; align-items: center; gap: 16px; }
+
+.bar-label {
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 12px;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+  min-width: 160px;
+  text-align: right;
+  text-transform: uppercase;
+}
+
+.bar-track {
+  flex: 1;
+  height: 28px;
+  background: #0a0a14;
+  border: 1px solid var(--border);
+  position: relative;
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  position: relative;
+  transition: none;
+  min-width: 2px;
+}
+
+.bar-fill.animated { animation: barReveal 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards; }
+
+.bar-fill.safe {
+  background: linear-gradient(90deg, var(--green) 0%, #00cc66 100%);
+  box-shadow: 0 0 20px var(--green-dim);
+}
+
+.bar-fill.warning {
+  background: linear-gradient(90deg, var(--yellow) 0%, var(--orange) 100%);
+  box-shadow: 0 0 20px var(--yellow-dim);
+}
+
+.bar-fill.danger {
+  background: linear-gradient(90deg, var(--orange) 0%, var(--red) 100%);
+  box-shadow: 0 0 20px var(--red-dim);
+}
+
+.bar-fill.zero {
+  background: var(--green);
+  box-shadow: 0 0 10px var(--green-dim);
+  width: 2px !important;
+}
+
+.bar-value {
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  min-width: 55px;
+  text-align: left;
+}
+
+.bar-extra {
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 11px;
+  color: var(--text-muted);
+  min-width: 70px;
+}
+
+/* === SEVERITY GRID === */
+.severity-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.severity-cell {
+  padding: 20px;
+  text-align: center;
+  border: 1px solid var(--border);
+  position: relative;
+  opacity: 0;
+}
+
+.severity-cell.visible { animation: scaleIn 0.4s ease forwards; }
+.severity-grid .severity-cell:nth-child(1).visible { animation-delay: 0s; }
+.severity-grid .severity-cell:nth-child(2).visible { animation-delay: 0.1s; }
+.severity-grid .severity-cell:nth-child(3).visible { animation-delay: 0.2s; }
+.severity-grid .severity-cell:nth-child(4).visible { animation-delay: 0.3s; }
+
+.severity-cell.clean {
+  background: linear-gradient(180deg, #00ff8808, transparent);
+  border-color: #00ff8822;
+}
+
+.severity-cell.breached {
+  background: linear-gradient(180deg, #ff224418, transparent);
+  border-color: #ff224444;
+}
+
+.severity-name {
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 11px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.severity-cell.clean .severity-name { color: var(--green); }
+.severity-cell.breached .severity-name { color: var(--red); }
+
+.severity-hits {
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.severity-cell.clean .severity-hits { color: var(--green); }
+.severity-cell.breached .severity-hits { color: var(--red); }
+
+.severity-total {
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+/* === FINDINGS === */
+.findings { margin-bottom: 48px; }
+
+.finding-card {
+  background: var(--bg-card);
+  border: 1px solid var(--red-dim);
+  border-left: 3px solid var(--red);
+  padding: 24px;
+  margin-bottom: 16px;
+  position: relative;
+  overflow: hidden;
+}
+
+.finding-badges {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  z-index: 2;
+}
+
+.finding-hit {
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--red);
+  letter-spacing: 3px;
+  padding: 3px 10px;
+  border: 1px solid var(--red-dim);
+  background: #ff22440a;
+}
+
+.finding-card::after {
+  content: '';
+  position: absolute;
+  left: 0; top: -2px;
+  width: 100%; height: 2px;
+  background: linear-gradient(90deg, transparent, var(--red), transparent);
+  opacity: 0;
+}
+
+.finding-card.visible::after {
+  opacity: 1;
+  animation: scanDown 2s ease-out forwards;
+}
+
+.finding-header {
+  padding-right: 150px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.finding-id {
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 13px;
+  color: var(--cyan);
+  padding: 2px 8px;
+  border: 1px solid var(--cyan-dim);
+}
+
+.finding-name {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.finding-target {
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 11px;
+  letter-spacing: 1px;
+  padding: 2px 8px;
+  border: 1px solid;
+}
+
+.finding-target.azure { color: #4488ff; border-color: #4488ff44; }
+.finding-target.claude { color: #cc88ff; border-color: #cc88ff44; }
+.finding-target.bedrock { color: #ffab2e; border-color: #ffab2e44; }
+.finding-target.bedrock-guardrails { color: #d97a1a; border-color: #d97a1a44; }
+.finding-target.bedrock-nemo { color: #2ec4b6; border-color: #2ec4b644; }
+
+.finding-meta {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.finding-meta span {
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 11px;
+  color: var(--text-dim);
+  letter-spacing: 1px;
+}
+
+.finding-prompt, .finding-response { margin-bottom: 12px; }
+
+.finding-prompt-label, .finding-response-label {
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.finding-prompt-text, .finding-response-text {
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 12px;
+  line-height: 1.7;
+  padding: 12px 16px;
+  background: #06060c;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  max-height: 120px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.finding-prompt-text { border-left: 2px solid var(--red-dim); }
+.finding-response-text { border-left: 2px solid var(--yellow-dim); }
+
+.finding-reasoning {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 13px;
+  color: var(--text-dim);
+  padding: 12px 16px;
+  background: #ff224408;
+  border: 1px solid var(--red-glow);
+  line-height: 1.6;
+}
+
+.finding-reasoning strong {
+  color: var(--red);
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 11px;
+  letter-spacing: 1px;
+}
+
+/* === ATTACK LOG TABLE === */
+.log-table-wrap { overflow-x: auto; margin-bottom: 48px; }
+
+.log-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 12px;
+}
+
+.log-table thead th {
+  text-align: left;
+  padding: 12px 16px;
+  background: var(--bg-secondary);
+  border-bottom: 2px solid var(--border);
+  color: var(--text-dim);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  font-size: 10px;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.log-table tbody tr {
+  border-bottom: 1px solid #12131e;
+  transition: background 0.2s ease;
+  opacity: 0;
+}
+
+.log-table tbody tr.visible { animation: slideInRow 0.3s ease forwards; }
+
+.log-table tbody tr:hover { background: var(--bg-card); }
+
+.log-table tbody td {
+  padding: 10px 16px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.log-table .tag {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 10px;
+  letter-spacing: 1px;
+  border: 1px solid;
+}
+
+.tag.blocked { color: var(--green); border-color: var(--green-dim); background: #00ff8808; }
+.tag.hit { color: var(--red); border-color: var(--red-dim); background: #ff224408; animation: pulseGlow 2s ease-in-out infinite; }
+.tag.filtered { color: var(--yellow); border-color: var(--yellow-dim); background: #ffcc0008; }
+
+.tag.sev-low { color: #88aacc; border-color: #88aacc44; }
+.tag.sev-medium { color: var(--yellow); border-color: var(--yellow-dim); }
+.tag.sev-high { color: var(--orange); border-color: #ff880044; }
+.tag.sev-critical { color: var(--red); border-color: var(--red-dim); }
+
+/* === FOOTER === */
+.footer {
+  text-align: center;
+  padding: 40px 0;
+  border-top: 1px solid var(--border);
+  margin-top: 40px;
+}
+
+.footer-text {
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 2px;
+}
+
+.footer-brand {
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 12px;
+  color: var(--cyan-dim);
+  letter-spacing: 4px;
+  margin-top: 8px;
+}
+
+/* === KEYFRAMES === */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(30px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeInLeft {
+  from { opacity: 0; transform: translateX(-30px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes fadeInRight {
+  from { opacity: 0; transform: translateX(30px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes glitch {
+  0% { text-shadow: 2px 0 var(--red), -2px 0 var(--cyan); }
+  20% { text-shadow: -2px 0 var(--red), 2px 0 var(--cyan); }
+  40% { text-shadow: 2px -1px var(--red), -2px 1px var(--cyan); }
+  60% { text-shadow: -1px 2px var(--red), 1px -2px var(--cyan); }
+  80% { text-shadow: 1px 0 var(--red), -1px 0 var(--cyan); }
+  100% { text-shadow: 2px 0 var(--red), -2px 0 var(--cyan); }
+}
+@keyframes glitchBig {
+  0%, 100% { clip-path: inset(0 0 0 0); transform: translate(0); }
+  5% { clip-path: inset(20% 0 60% 0); transform: translate(-4px, 0); }
+  10% { clip-path: inset(60% 0 5% 0); transform: translate(4px, 0); }
+  15% { clip-path: inset(0 0 0 0); transform: translate(0); }
+}
+@keyframes typewriter {
+  from { width: 0; }
+  to { width: 100%; }
+}
+@keyframes blink {
+  0%, 100% { border-color: var(--cyan); }
+  50% { border-color: transparent; }
+}
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 5px var(--red-dim); }
+  50% { box-shadow: 0 0 20px var(--red-dim), 0 0 40px var(--red-glow); }
+}
+@keyframes scanDown {
+  0% { top: -2px; }
+  100% { top: 100%; }
+}
+@keyframes barReveal {
+  from { width: 0 !important; }
+}
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.8); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes slideInRow {
+  from { opacity: 0; transform: translateX(-10px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes numberPop {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
+
+.animate {
+  animation: fadeInUp 0.6s ease forwards;
+  opacity: 0;
+}
+.delay-1 { animation-delay: 0.1s; }
+.delay-2 { animation-delay: 0.3s; }
+.delay-3 { animation-delay: 0.4s; }
+.delay-4 { animation-delay: 0.5s; }
+.delay-5 { animation-delay: 0.6s; }
+.delay-6 { animation-delay: 0.7s; }
+
+.stat-value.counted { animation: numberPop 0.4s ease; }
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-primary); }
+::-webkit-scrollbar-thumb { background: var(--border); }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+
+
+.scorecard {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 32px;
+  background: linear-gradient(135deg, var(--bg-card) 0%, var(--bg-secondary) 100%);
+  border: 1px solid var(--border);
+  padding: 36px;
+  margin-bottom: 48px;
+  position: relative;
+  overflow: hidden;
+}
+.scorecard::before {
+  content: '';
+  position: absolute; top: 0; left: 0; width: 100%; height: 3px;
+  background: linear-gradient(90deg, var(--cyan), transparent);
+}
+.score-block { text-align: center; border-right: 1px solid var(--border); padding-right: 24px; }
+.score-grade { font-family: 'Audiowide', sans-serif; font-size: 92px; line-height: 1; margin-bottom: 6px; }
+.score-num { font-family: 'Chakra Petch', sans-serif; font-size: 30px; font-weight: 700; }
+.score-caption { font-family: 'Chakra Petch', sans-serif; font-size: 11px; letter-spacing: 2px; color: var(--text-dim); text-transform: uppercase; margin-top: 10px; }
+.eval-right { display: flex; flex-direction: column; gap: 20px; justify-content: center; }
+.verdict { font-family: 'Rajdhani', sans-serif; font-size: 19px; color: var(--text-primary); line-height: 1.55; }
+.eval-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; }
+.eval-metric { background: #06060c; border: 1px solid var(--border); padding: 14px 16px; }
+.eval-metric .l { font-family: 'Chakra Petch', sans-serif; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-dim); margin-bottom: 6px; }
+.eval-metric .v { font-family: 'Chakra Petch', sans-serif; font-size: 24px; font-weight: 700; }
+@media (max-width: 760px) {
+  .scorecard { grid-template-columns: 1fr; }
+  .score-block { border-right: none; border-bottom: 1px solid var(--border); padding-right: 0; padding-bottom: 20px; }
+}
+.defense-bars { display: flex; flex-direction: column; gap: 14px; margin-bottom: 20px; }
+.defense-row { display: flex; align-items: center; gap: 16px; }
+.defense-label { min-width: 190px; text-align: right; font-family: 'Chakra Petch', sans-serif; font-size: 12px; color: var(--text-dim); text-transform: uppercase; }
+.defense-track { flex: 1; height: 26px; background: #0a0a14; border: 1px solid var(--border); position: relative; overflow: hidden; }
+.defense-fill { height: 100%; background: linear-gradient(90deg, var(--green), #00cc66); box-shadow: 0 0 14px var(--green-dim); }
+.defense-grade { min-width: 46px; font-family: 'Audiowide', sans-serif; font-size: 16px; text-align: center; }
+.defense-pct { min-width: 110px; font-family: 'Chakra Petch', sans-serif; font-size: 12px; color: var(--text-dim); }
+.guardrail-uplift { padding: 20px 24px; background: linear-gradient(135deg, #1a1206, var(--bg-card)); border: 1px solid #ffab2e44; border-left: 3px solid #ffab2e; }
+.guardrail-uplift .big { font-family: 'Audiowide', sans-serif; font-size: 36px; color: #ffab2e; }
+.nemo-uplift { padding: 20px 24px; margin-top: 14px; background: linear-gradient(135deg, #06201d, var(--bg-card)); border: 1px solid #2ec4b644; border-left: 3px solid #2ec4b6; }
+.nemo-uplift .big { font-family: 'Audiowide', sans-serif; font-size: 36px; color: #2ec4b6; }
+
+</style>
+</head>
+<body>
+
+<div class="container">
+
+  <!-- HEADER -->
+  <header class="header animate delay-1">
+    <div class="badge">CLASSIFIED // AUTHORIZED RED TEAM ENGAGEMENT</div>
+    <h1>RED TEAM</h1>
+    <div class="header-sub">LLM ATTACK SIMULATOR v1.0 &#8212; ASSESSMENT REPORT</div>
+    <div class="header-meta">REPORT GENERATED 2026-08-09 20:49 UTC &nbsp;|&nbsp; OPERATOR: JACE &nbsp;|&nbsp; FRAMEWORKS: OWASP LLM TOP 10 (2025) · MITRE ATLAS</div>
+    <div class="session-banner">
+      <div class="session-item">TEST SESSIONS: <strong>0</strong></div>
+      <div class="session-item">FIRST RUN: <strong>N/A</strong></div>
+      <div class="session-item">LATEST RUN: <strong>N/A</strong></div>
+      <div class="session-item">TECHNIQUES: <strong>0</strong></div>
+      <div class="session-item">TARGETS: <strong>0</strong></div>
+    </div>
+  </header>
+  <nav class="window-tabs animate delay-1" aria-label="Report time window">
+    <span class="window-tabs-caption">VIEW WINDOW</span>
+    <a class="window-tab" href="index-latest.html"><span class="window-tab-label">Latest Session</span><span class="window-tab-count">137</span></a><a class="window-tab active" href="index-7d.html"><span class="window-tab-label">Last 7 Days</span><span class="window-tab-count">0</span></a><a class="window-tab" href="index-30d.html"><span class="window-tab-label">Last 30 Days</span><span class="window-tab-count">1585</span></a><a class="window-tab" href="index.html"><span class="window-tab-label">All Time</span><span class="window-tab-count">1787</span></a>
+  </nav>
+
+  <div class="empty-window animate delay-2">
+    <div class="empty-window-icon">&#9675;</div>
+    <div class="empty-window-title">NO ATTACKS IN THIS WINDOW</div>
+    <div class="empty-window-text">
+      No red-team attacks were recorded for <strong>Last 7 Days</strong>.
+      Run a fresh assessment, or switch to a wider window above to see historical results.
+    </div>
+  </div>
+
+  <!-- FRAMEWORK COVERAGE & REMEDIATION -->
+  <div class="section-title animate delay-5">FRAMEWORK COVERAGE &#38; REMEDIATION</div>
+  <div class="animate delay-5" style="padding:16px;background:var(--bg-secondary);border:1px solid var(--cyan-dim);border-radius:8px;margin-bottom:20px">
+    <div style="color:#889;font-size:13px;margin-bottom:6px">OWASP Top 10 for LLM Applications (2025) &#8212; 7/10 categories exercised</div>
+    <div><span style="display:inline-block;margin:3px;padding:4px 10px;border:1px solid var(--cyan-dim);border-radius:4px;color:var(--cyan);font-size:12px">LLM01:2025 · Prompt Injection</span><span style="display:inline-block;margin:3px;padding:4px 10px;border:1px solid var(--cyan-dim);border-radius:4px;color:var(--cyan);font-size:12px">LLM02:2025 · Sensitive Information Disclosure</span><span style="display:inline-block;margin:3px;padding:4px 10px;border:1px solid var(--cyan-dim);border-radius:4px;color:var(--cyan);font-size:12px">LLM05:2025 · Improper Output Handling</span><span style="display:inline-block;margin:3px;padding:4px 10px;border:1px solid var(--cyan-dim);border-radius:4px;color:var(--cyan);font-size:12px">LLM06:2025 · Excessive Agency</span><span style="display:inline-block;margin:3px;padding:4px 10px;border:1px solid var(--cyan-dim);border-radius:4px;color:var(--cyan);font-size:12px">LLM07:2025 · System Prompt Leakage</span><span style="display:inline-block;margin:3px;padding:4px 10px;border:1px solid var(--cyan-dim);border-radius:4px;color:var(--cyan);font-size:12px">LLM08:2025 · Vector and Embedding Weaknesses</span><span style="display:inline-block;margin:3px;padding:4px 10px;border:1px solid var(--cyan-dim);border-radius:4px;color:var(--cyan);font-size:12px">LLM10:2025 · Unbounded Consumption</span></div>
+    <div style="color:#889;font-size:13px;margin:14px 0 6px">MITRE ATLAS &#8212; 18 techniques</div>
+    <div><span style="display:inline-block;margin:3px;padding:4px 10px;border:1px solid var(--red-dim);border-radius:4px;color:var(--red);font-size:12px">AML.T0024 · Exfiltration via ML Inference API</span><span style="display:inline-block;margin:3px;padding:4px 10px;border:1px solid var(--red-dim);border-radius:4px;color:var(--red);font-size:12px">AML.T0024.000 · Infer Training Data Membership</span><span style="display:inline-block;margin:3px;padding:4px 10px;border:1px solid var(--red-dim);border-radius:4px;color:var(--red);font-size:12px">AML.T0029 · Denial of ML Service</span><span style="display:inline-block;margin:3px;padding:4px 10px;border:1px solid var(--red-dim);border-radius:4px;color:var(--red);font-size:12px">AML.T0034 · Cost Harvesting</span><span style="display:inline-block;margin:3px;padding:4px 10px;border:1px solid var(--red-dim);border-radius:4px;color:var(--red);font-size:12px">AML.T0034.002 · Cost Harvesting: Agentic Resource Consumption</span><span style="display:inline-block;margin:3px;padding:4px 10px;border:1px solid var(--red-dim);border-radius:4px;color:var(--red);font-size:12px">AML.T0051 · LLM Prompt Injection</span><span style="display:inline-block;margin:3px;padding:4px 10px;border:1px solid var(--red-dim);border-radius:4px;color:var(--red);font-size:12px">AML.T0051.000 · LLM Prompt Injection: Direct</span><span style="display:inline-block;margin:3px;padding:4px 10px;border:1px solid var(--red-dim);border-radius:4px;color:var(--red);font-size:12px">AML.T0051.001 · LLM Prompt Injection: Indirect</span><span style="display:inline-block;margin:3px;padding:4px 10px;border:1px solid var(--red-dim);border-radius:4px;color:var(--red);font-size:12px">AML.T0053 · AI Agent Tool Invocation</span><span style="display:inline-block;margin:3px;padding:4px 10px;border:1px solid var(--red-dim);border-radius:4px;color:var(--red);font-size:12px">AML.T0054 · LLM Jailbreak</span><span style="display:inline-block;margin:3px;padding:4px 10px;border:1px solid var(--red-dim);border-radius:4px;color:var(--red);font-size:12px">AML.T0057 · LLM Data Leakage</span><span style="display:inline-block;margin:3px;padding:4px 10px;border:1px solid var(--red-dim);border-radius:4px;color:var(--red);font-size:12px">AML.T0065 · LLM Prompt Crafting</span><span style="display:inline-block;margin:3px;padding:4px 10px;border:1px solid var(--red-dim);border-radius:4px;color:var(--red);font-size:12px">AML.T0067 · LLM Trusted Output Components Manipulation</span><span style="display:inline-block;margin:3px;padding:4px 10px;border:1px solid var(--red-dim);border-radius:4px;color:var(--red);font-size:12px">AML.T0068 · LLM Prompt Obfuscation</span><span style="display:inline-block;margin:3px;padding:4px 10px;border:1px solid var(--red-dim);border-radius:4px;color:var(--red);font-size:12px">AML.T0080.001 · AI Agent Context Poisoning: Thread</span><span style="display:inline-block;margin:3px;padding:4px 10px;border:1px solid var(--red-dim);border-radius:4px;color:var(--red);font-size:12px">AML.T0081 · Modify AI Agent Configuration</span><span style="display:inline-block;margin:3px;padding:4px 10px;border:1px solid var(--red-dim);border-radius:4px;color:var(--red);font-size:12px">AML.T0084.001 · Discover AI Agent Configuration: Tool Definitions</span><span style="display:inline-block;margin:3px;padding:4px 10px;border:1px solid var(--red-dim);border-radius:4px;color:var(--red);font-size:12px">AML.T0086 · Exfiltration via AI Agent Tool Invocation</span></div>
+    <div style="color:#889;font-size:13px;margin:18px 0 6px">MITRE ATLAS techniques &#8212; adversary behavior each ID describes</div>
+    <div style="margin:6px 0;padding:10px 14px;background:var(--bg-card);border-left:3px solid var(--red-dim)"><span style="color:var(--red);font-weight:700;font-size:13px">AML.T0024 &#183; Exfiltration via ML Inference API</span><div style="color:#9ab;font-size:13px;margin-top:4px;line-height:1.5">Extract training data or model internals through crafted inference-API queries.</div></div><div style="margin:6px 0;padding:10px 14px;background:var(--bg-card);border-left:3px solid var(--red-dim)"><span style="color:var(--red);font-weight:700;font-size:13px">AML.T0024.000 &#183; Infer Training Data Membership</span><div style="color:#9ab;font-size:13px;margin-top:4px;line-height:1.5">Determine whether specific data was part of the model's training set.</div></div><div style="margin:6px 0;padding:10px 14px;background:var(--bg-card);border-left:3px solid var(--red-dim)"><span style="color:var(--red);font-weight:700;font-size:13px">AML.T0029 &#183; Denial of ML Service</span><div style="color:#9ab;font-size:13px;margin-top:4px;line-height:1.5">Degrade or exhaust the model service so it can't serve legitimate users.</div></div><div style="margin:6px 0;padding:10px 14px;background:var(--bg-card);border-left:3px solid var(--red-dim)"><span style="color:var(--red);font-weight:700;font-size:13px">AML.T0034 &#183; Cost Harvesting</span><div style="color:#9ab;font-size:13px;margin-top:4px;line-height:1.5">Drive up the victim's inference/compute spend.</div></div><div style="margin:6px 0;padding:10px 14px;background:var(--bg-card);border-left:3px solid var(--red-dim)"><span style="color:var(--red);font-weight:700;font-size:13px">AML.T0034.002 &#183; Cost Harvesting: Agentic Resource Consumption</span><div style="color:#9ab;font-size:13px;margin-top:4px;line-height:1.5">Loop an agent through expensive tool calls or retrievals to inflate cost (denial of wallet).</div></div><div style="margin:6px 0;padding:10px 14px;background:var(--bg-card);border-left:3px solid var(--red-dim)"><span style="color:var(--red);font-weight:700;font-size:13px">AML.T0051 &#183; LLM Prompt Injection</span><div style="color:#9ab;font-size:13px;margin-top:4px;line-height:1.5">Craft input that overrides or subverts the model's intended instructions.</div></div><div style="margin:6px 0;padding:10px 14px;background:var(--bg-card);border-left:3px solid var(--red-dim)"><span style="color:var(--red);font-weight:700;font-size:13px">AML.T0051.000 &#183; LLM Prompt Injection: Direct</span><div style="color:#9ab;font-size:13px;margin-top:4px;line-height:1.5">Prompt injection typed directly by the user into the model.</div></div><div style="margin:6px 0;padding:10px 14px;background:var(--bg-card);border-left:3px solid var(--red-dim)"><span style="color:var(--red);font-weight:700;font-size:13px">AML.T0051.001 &#183; LLM Prompt Injection: Indirect</span><div style="color:#9ab;font-size:13px;margin-top:4px;line-height:1.5">Prompt injection hidden in third-party content the model later ingests (documents, web pages, tool output).</div></div><div style="margin:6px 0;padding:10px 14px;background:var(--bg-card);border-left:3px solid var(--red-dim)"><span style="color:var(--red);font-weight:700;font-size:13px">AML.T0053 &#183; AI Agent Tool Invocation</span><div style="color:#9ab;font-size:13px;margin-top:4px;line-height:1.5">Abuse an agent's ability to call tools/functions to take attacker-directed actions.</div></div><div style="margin:6px 0;padding:10px 14px;background:var(--bg-card);border-left:3px solid var(--red-dim)"><span style="color:var(--red);font-weight:700;font-size:13px">AML.T0054 &#183; LLM Jailbreak</span><div style="color:#9ab;font-size:13px;margin-top:4px;line-height:1.5">Bypass the model's safety alignment to elicit restricted behavior.</div></div><div style="margin:6px 0;padding:10px 14px;background:var(--bg-card);border-left:3px solid var(--red-dim)"><span style="color:var(--red);font-weight:700;font-size:13px">AML.T0057 &#183; LLM Data Leakage</span><div style="color:#9ab;font-size:13px;margin-top:4px;line-height:1.5">Induce the model to reveal sensitive context, secrets, or hidden instructions.</div></div><div style="margin:6px 0;padding:10px 14px;background:var(--bg-card);border-left:3px solid var(--red-dim)"><span style="color:var(--red);font-weight:700;font-size:13px">AML.T0065 &#183; LLM Prompt Crafting</span><div style="color:#9ab;font-size:13px;margin-top:4px;line-height:1.5">Iteratively engineer prompts (often automated) that reliably defeat model defenses.</div></div><div style="margin:6px 0;padding:10px 14px;background:var(--bg-card);border-left:3px solid var(--red-dim)"><span style="color:var(--red);font-weight:700;font-size:13px">AML.T0067 &#183; LLM Trusted Output Components Manipulation</span><div style="color:#9ab;font-size:13px;margin-top:4px;line-height:1.5">Forge authoritative-looking structures (policy files, system tags) so the model treats attacker input as trusted.</div></div><div style="margin:6px 0;padding:10px 14px;background:var(--bg-card);border-left:3px solid var(--red-dim)"><span style="color:var(--red);font-weight:700;font-size:13px">AML.T0068 &#183; LLM Prompt Obfuscation</span><div style="color:#9ab;font-size:13px;margin-top:4px;line-height:1.5">Hide malicious intent with encoding, rare tokens, or adversarial suffixes to evade filters.</div></div><div style="margin:6px 0;padding:10px 14px;background:var(--bg-card);border-left:3px solid var(--red-dim)"><span style="color:var(--red);font-weight:700;font-size:13px">AML.T0080.001 &#183; AI Agent Context Poisoning: Thread</span><div style="color:#9ab;font-size:13px;margin-top:4px;line-height:1.5">Inject fabricated conversation history so the agent acts on events that never happened.</div></div><div style="margin:6px 0;padding:10px 14px;background:var(--bg-card);border-left:3px solid var(--red-dim)"><span style="color:var(--red);font-weight:700;font-size:13px">AML.T0081 &#183; Modify AI Agent Configuration</span><div style="color:#9ab;font-size:13px;margin-top:4px;line-height:1.5">Alter the agent's configuration or instruction files to plant persistent malicious behavior.</div></div><div style="margin:6px 0;padding:10px 14px;background:var(--bg-card);border-left:3px solid var(--red-dim)"><span style="color:var(--red);font-weight:700;font-size:13px">AML.T0084.001 &#183; Discover AI Agent Configuration: Tool Definitions</span><div style="color:#9ab;font-size:13px;margin-top:4px;line-height:1.5">Enumerate an agent's available tools and schemas to plan an abuse of them.</div></div><div style="margin:6px 0;padding:10px 14px;background:var(--bg-card);border-left:3px solid var(--red-dim)"><span style="color:var(--red);font-weight:700;font-size:13px">AML.T0086 &#183; Exfiltration via AI Agent Tool Invocation</span><div style="color:#9ab;font-size:13px;margin-top:4px;line-height:1.5">Exfiltrate data by coercing the agent to send it out through a legitimate tool call.</div></div>
+    <div style="color:#889;font-size:13px;margin:18px 0 6px">Actionable Remediation (successful findings)</div>
+    <div style="color:var(--green)">No successful findings &#8212; nothing to remediate. &#10003;</div>
+  </div>
+
+
+  <!-- FULL ATTACK LOG -->
+  <div class="section-title animate delay-6">COMPLETE ATTACK LOG</div>
+  <div class="log-table-wrap animate delay-6">
+    <table class="log-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Technique</th>
+          <th>Category</th>
+          <th>Severity</th>
+          <th>Target</th>
+          <th>Result</th>
+          <th>Impact</th>
+          <th>Confidence</th>
+          <th>Time (UTC)</th>
+        </tr>
+      </thead>
+      <tbody id="logBody"></tbody>
+    </table>
+  </div>
+
+  <!-- FOOTER -->
+  <footer class="footer">
+    <div class="footer-text">RED TEAM ENGAGEMENT COMPLETE &#8212; ALL FINDINGS DOCUMENTED</div>
+    <div class="footer-brand">BUILT BY JACE // 2026</div>
+  </footer>
+
+</div>
+
+<script>
+// Attack log data (auto-generated)
+const results = [
+
+];
+
+const tbody = document.getElementById('logBody');
+if (tbody) results.forEach((r, i) => {
+  const row = document.createElement('tr');
+  const resultTag = r.success ? '<span class="tag hit">HIT</span>' : 
+                    r.filtered ? '<span class="tag filtered">FILTERED</span>' : 
+                    '<span class="tag blocked">BLOCKED</span>';
+  const sevTag = `<span class="tag sev-${r.sev}">${r.sev.toUpperCase()}</span>`;
+  const targetColor = r.target.includes('nemo') ? '#2ec4b6' :
+                      r.target.includes('guardrail') ? '#d97a1a' :
+                      r.target.includes('bedrock') ? '#ffab2e' :
+                      r.target.includes('azure') ? '#4488ff' : '#cc88ff';
+
+  row.innerHTML = `
+    <td style="color: var(--text-muted);">${i + 1}</td>
+    <td><span style="color: var(--cyan);">${r.tech}</span> <span style="color: var(--text-dim);">${r.name}</span></td>
+    <td>${r.cat.replace('_', ' ')}</td>
+    <td>${sevTag}</td>
+    <td style="color: ${targetColor};">${r.target}</td>
+    <td>${resultTag}</td>
+    <td style="color: ${r.impact > 0 ? 'var(--red)' : 'var(--text-muted)'}; font-family: 'Chakra Petch', sans-serif; font-size: 11px;">${r.impact}/100</td>
+    <td style="color: var(--text-dim);">${r.conf}</td>
+    <td style="color: var(--text-dim); white-space: nowrap;">${r.time.replace(' UTC','')}</td>
+  `;
+  tbody.appendChild(row);
+});
+
+// === ANIMATION ENGINE ===
+
+function animateCounter(el, target, duration, suffix) {
+  duration = duration || 1500;
+  suffix = suffix || '';
+  const isFloat = String(target).includes('.');
+  const startTime = performance.now();
+  
+  function update(currentTime) {
+    const elapsed = currentTime - startTime;
+    const progress = Math.min(elapsed / duration, 1);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    const current = target * eased;
+    
+    el.textContent = (isFloat ? current.toFixed(1) : Math.floor(current)) + suffix;
+    
+    if (progress < 1) {
+      requestAnimationFrame(update);
+    } else {
+      el.textContent = target + suffix;
+      el.classList.add('counted');
+    }
+  }
+  requestAnimationFrame(update);
+}
+
+const observerOptions = { threshold: 0.15, rootMargin: '0px 0px -50px 0px' };
+
+// Number counters
+const statCounterObserver = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting && !entry.target.dataset.counted) {
+      entry.target.dataset.counted = 'true';
+      const val = parseFloat(entry.target.dataset.target);
+      const suffix = entry.target.dataset.suffix || '';
+      animateCounter(entry.target, val, 1800, suffix);
+    }
+  });
+}, observerOptions);
+
+document.querySelectorAll('.stat-value').forEach(el => {
+  const text = el.textContent.trim();
+  let val, suffix = '';
+  if (text.includes('%')) { val = text.replace('%', ''); suffix = '%'; }
+  else { val = text; }
+  el.dataset.target = val;
+  el.dataset.suffix = suffix;
+  el.textContent = '0' + suffix;
+  statCounterObserver.observe(el);
+});
+
+document.querySelectorAll('.severity-hits').forEach(el => {
+  el.dataset.target = el.textContent.trim();
+  el.dataset.suffix = '';
+  el.textContent = '0';
+  statCounterObserver.observe(el);
+});
+
+document.querySelectorAll('.target-rate').forEach(el => {
+  const text = el.textContent.trim();
+  // A fully-inconclusive target shows "N/A" — leave it untouched, don't animate to NaN%.
+  if (isNaN(parseFloat(text))) return;
+  el.dataset.target = text.replace('%', '');
+  el.dataset.suffix = '%';
+  el.textContent = '0%';
+  statCounterObserver.observe(el);
+});
+
+// Scroll reveals
+const revealObserver = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      entry.target.classList.add('visible');
+      revealObserver.unobserve(entry.target);
+    }
+  });
+}, observerOptions);
+
+document.querySelectorAll('.target-box, .severity-cell, .finding-card').forEach(el => revealObserver.observe(el));
+
+// Bar fills
+const barObserver = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      entry.target.querySelectorAll('.bar-fill').forEach((bar, i) => {
+        setTimeout(() => bar.classList.add('animated'), i * 200);
+      });
+      barObserver.unobserve(entry.target);
+    }
+  });
+}, observerOptions);
+
+document.querySelectorAll('.bar-chart').forEach(el => barObserver.observe(el));
+
+// Table row stagger. A full attack log can be hundreds of rows tall — far taller
+// than the viewport — so a non-zero IntersectionObserver threshold could never be
+// reached and the rows would stay stuck at opacity:0. Use threshold 0 (fires as
+// soon as any pixel is visible), cap the stagger so a long log doesn't take tens
+// of seconds, and add a load fallback that guarantees the rows appear.
+function revealRows(table) {
+  if (table.dataset.animated) return;
+  table.dataset.animated = 'true';
+  table.querySelectorAll('tbody tr').forEach((row, i) => {
+    setTimeout(() => row.classList.add('visible'), Math.min(i, 40) * 25);
+  });
+}
+
+const tableObserver = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      revealRows(entry.target);
+      tableObserver.unobserve(entry.target);
+    }
+  });
+}, { threshold: 0 });
+
+document.querySelectorAll('.log-table').forEach(el => tableObserver.observe(el));
+
+// Belt-and-suspenders: reveal any still-hidden rows shortly after load.
+window.addEventListener('load', () => setTimeout(
+  () => document.querySelectorAll('.log-table').forEach(revealRows), 600));
+</script>
+
+</body>
+</html>

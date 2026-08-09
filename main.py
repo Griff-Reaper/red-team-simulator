@@ -63,6 +63,7 @@ def print_menu():
     print("  18. Remediation Report (Strix)")
     print("  ─── REPORTING ───────────────────────")
     print("  19. Generate & Open Dashboard")
+    print("  20. Archive & Reset Log (fresh start)")
     print("  ─────────────────────────────")
     print("  0.  Exit")
     print("=" * 50)
@@ -627,6 +628,39 @@ def option_generate_dashboard():
         print(f"[!] Dashboard generation failed: {e}")
 
 
+def option_archive_and_reset(logger: ResultsLogger):
+    """Archive the current attack log and start a clean one (fresh-start reset).
+
+    Non-destructive to history: the old log is moved to results/archive/ (dated)
+    so it stays recoverable; the live log is emptied so the next run and every
+    dashboard built after it reflect only fresh data.
+    """
+    logger.results = logger._load_existing()
+    count = len(logger.results)
+
+    print("\n" + "=" * 50)
+    print("  ARCHIVE & RESET LOG")
+    print("=" * 50)
+    if count == 0:
+        print("  The log is already empty — nothing to archive.")
+        return
+
+    print(f"  Current log holds {count} record(s).")
+    print("  This moves them to results/archive/ (recoverable) and starts a")
+    print("  clean log. The dashboard will then show only new runs.")
+    confirm = input("\n  Archive and reset now? (yes/no) > ").strip().lower()
+    if confirm != "yes":
+        print("  Cancelled — log left unchanged.")
+        return
+
+    dest = logger.archive_and_reset()
+    if dest:
+        print(f"\n[✓] Archived {count} record(s) to: {dest}")
+        print("[✓] Live log reset. Rebuild the dashboard (option 19) to see the fresh view.")
+    else:
+        print("  Nothing to archive.")
+
+
 def _preflight_check():
     """Warn (don't crash) about missing configuration before the menu loop."""
     import config
@@ -698,6 +732,8 @@ def main():
             option_remediation_report(logger)
         elif choice == "19":
             option_generate_dashboard()
+        elif choice == "20":
+            option_archive_and_reset(logger)
         elif choice == "0":
             print("\n[*] Shutting down simulator. Stay dangerous. 🔥")
             sys.exit(0)

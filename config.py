@@ -59,6 +59,9 @@ RESULTS_DIR = os.getenv("RESULTS_DIR", "results")
 # once for one-time migration from the old JSON-array format.
 LOG_FILE = os.path.join(RESULTS_DIR, "attack_log.jsonl")
 LEGACY_LOG_FILE = os.path.join(RESULTS_DIR, "attack_log.json")
+# "Archive & reset" moves the live log here (dated) and starts a clean one, so a
+# fresh engagement isn't polluted by old runs while history stays recoverable.
+ARCHIVE_DIR = os.path.join(RESULTS_DIR, "archive")
 
 # Bounded concurrency for batch testing. This IS the rate-limit control: at most
 # MAX_WORKERS attacks are in flight at once, and the SDKs auto-retry 429s with

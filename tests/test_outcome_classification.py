@@ -174,3 +174,27 @@ def test_clean_run_is_unchanged_by_the_error_path():
     assert s["conclusive"] == 2
     assert s["success_rate"] == 50.0
     assert s["by_target"]["claude"]["success_rate"] == 50.0
+
+
+# ── inconclusive is surfaced in the rendered dashboard ──────────────────────
+
+def test_dashboard_surfaces_inconclusive_card_section_and_log_tag():
+    from generate_dashboard import generate_html
+    results = [_r("claude", "high", False, "I cannot help.") for _ in range(3)]
+    results.append(_r("claude", "high", False, "[NO_RESPONSE] Claude returned no text content."))
+    html = generate_html(compute_stats(results), results)
+    # reconciling stat card, detail section, and the attack-log tag data
+    assert '<div class="stat-label">Inconclusive</div>' in html
+    assert "INCONCLUSIVE RESULTS" in html
+    assert "returned no text content" in html   # the "why"
+    assert "err: true" in html                  # attack-log row tagged, not counted as BLOCKED
+    assert "NO SUCCESSFUL BYPASSES" in html      # findings wording acknowledges the inconclusive
+    assert "ALL ATTACKS BLOCKED" not in html
+
+
+def test_dashboard_has_no_inconclusive_ui_on_a_clean_run():
+    from generate_dashboard import generate_html
+    results = [_r("claude", "high", True), _r("claude", "high", False, "I cannot help.")]
+    html = generate_html(compute_stats(results), results)
+    assert '<div class="stat-label">Inconclusive</div>' not in html
+    assert "INCONCLUSIVE RESULTS" not in html

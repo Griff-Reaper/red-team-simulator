@@ -596,9 +596,86 @@ def gen_target_boxes(by_target: dict) -> str:
     return "\n".join(boxes)
 
 
-def gen_finding_cards(findings: list[dict]) -> str:
+def _inconclusive_reason(response: str):
+    """Split an inconclusive response into a (label, detail) pair for display."""
+    resp = (response or "").strip()
+    if resp.startswith("[ERROR]"):
+        return "ERROR", resp[len("[ERROR]"):].strip() or "(no detail provided)"
+    if resp.startswith("[NO_RESPONSE]"):
+        return "NO RESPONSE", resp[len("[NO_RESPONSE]"):].strip() or "(target returned an empty response)"
+    return "INCONCLUSIVE", resp or "(no detail provided)"
+
+
+def gen_inconclusive_section(results: list) -> str:
+    """Detailed, honest accounting of inconclusive (errored / no-response) attacks
+    and WHY — so a run never reads as 'N blocked' when some attacks never actually
+    completed. Returns '' when everything was conclusive."""
+    inconclusive = [
+        r for r in results
+        if classify_outcome(r.get("response", ""), r.get("success", False)) == OUTCOME_ERROR
+    ]
+    if not inconclusive:
+        return ""
+
+    from collections import Counter
+    reason_counts = Counter()
+    rows = []
+    for r in sorted(inconclusive, key=lambda r: r.get("timestamp", ""), reverse=True):
+        label, detail = _inconclusive_reason(r.get("response", ""))
+        target = r.get("target", "unknown")
+        reason_counts[(target, label)] += 1
+        rows.append(
+            '        <tr>\n'
+            f'          <td><span style="color:var(--cyan)">{escape(r.get("technique_id","???"))}</span> '
+            f'<span style="color:var(--text-dim)">{escape(r.get("technique_name","Unknown"))}</span></td>\n'
+            f'          <td style="color:var(--text-dim)">{escape(target)}</td>\n'
+            f'          <td><span class="tag inconclusive">{escape(label)}</span></td>\n'
+            f'          <td style="color:var(--text-muted);font-size:12px">{escape(detail[:180])}</td>\n'
+            '        </tr>'
+        )
+
+    n = len(inconclusive)
+    table_body = "\n".join(rows)
+    why = "; ".join(
+        f'{cnt}&times; {escape(t)}: {escape(lbl)}' for (t, lbl), cnt in reason_counts.most_common()
+    )
+    plural = "s" if n != 1 else ""
+
+    return f'''
+  <!-- INCONCLUSIVE RESULTS -->
+  <div class="section-title animate delay-5">INCONCLUSIVE RESULTS &#8212; EXCLUDED FROM SCORING</div>
+  <div class="panel animate delay-5">
+    <div style="padding:16px;background:#06060c;border:1px solid var(--orange);border-left-width:4px;border-radius:4px;">
+      <div style="font-family:'Chakra Petch',sans-serif;font-size:10px;letter-spacing:2px;color:var(--orange);margin-bottom:10px;">KEY INSIGHT &#8212; DATA QUALITY</div>
+      <div style="font-family:'Rajdhani',sans-serif;font-size:14px;color:var(--text-dim);line-height:1.6;">
+        <strong style="color:var(--orange)">{n} attack{plural} could not be scored.</strong> The target errored or
+        returned no response, so <strong style="color:var(--text-primary)">there is no evidence the defense acted</strong> &#8212;
+        these are <strong style="color:var(--text-primary)">not</strong> counted as blocks and are excluded from every
+        success and defense rate. A run is only as trustworthy as it is conclusive; investigate these before relying on the numbers.
+        <br><span style="color:var(--text-muted)">Breakdown: {why}.</span>
+      </div>
+    </div>
+    <div class="log-table-wrap" style="margin-top:18px;">
+      <table class="log-table">
+        <thead>
+          <tr><th>Technique</th><th>Target</th><th>Reason</th><th>Detail (why it was inconclusive)</th></tr>
+        </thead>
+        <tbody>
+{table_body}
+        </tbody>
+      </table>
+    </div>
+  </div>'''
+
+
+def gen_finding_cards(findings: list[dict], errored: int = 0) -> str:
     """Generate detailed finding cards for successful attacks."""
     if not findings:
+        if errored:
+            return f"""    <div style="padding: 40px; text-align: center; border: 1px dashed var(--green-dim); color: var(--green);">
+      <div style="font-family: 'Chakra Petch', sans-serif; font-size: 16px; letter-spacing: 3px;">NO SUCCESSFUL BYPASSES</div>
+      <div style="font-family: 'Chakra Petch', sans-serif; font-size: 12px; color: var(--text-dim); margin-top: 8px;">Every <em>conclusive</em> attack was blocked &#8212; but {errored} attack(s) were inconclusive and could not be scored. See the breakdown below.</div>
+    </div>"""
         return """    <div style="padding: 40px; text-align: center; border: 1px dashed var(--green-dim); color: var(--green);">
       <div style="font-family: 'Chakra Petch', sans-serif; font-size: 16px; letter-spacing: 3px;">ALL ATTACKS BLOCKED</div>
       <div style="font-family: 'Chakra Petch', sans-serif; font-size: 12px; color: var(--text-dim); margin-top: 8px;">No successful bypasses detected in this test session.</div>
@@ -722,11 +799,13 @@ def gen_table_data(results: list[dict]) -> str:
         # Filtered?
         resp = r.get("response", "")
         filtered = "true" if ("[CONTENT_FILTERED]" in resp or "content_filter" in resp) else "false"
+        # Inconclusive (errored / no response) — never a block, tagged separately.
+        err = "true" if classify_outcome(resp, r.get("success", False)) == OUTCOME_ERROR else "false"
 
         entries.append(
             f'  {{ tech: "{tech_id}", name: "{escape(name)}", cat: "{cat}", '
             f'sev: "{sev}", target: "{target}", success: {success}, '
-            f'impact: {impact}, conf: {conf}, filtered: {filtered}, '
+            f'impact: {impact}, conf: {conf}, filtered: {filtered}, err: {err}, '
             f'time: "{escape(time)}" }}'
         )
 
@@ -994,7 +1073,8 @@ def gen_defense_section(stats: dict) -> str:
 
 
 def gen_report_body(stats, scorecard, data_quality_banner, target_boxes, defense_section,
-                    category_bars, severity_cells, key_insight, chain_section, finding_cards) -> str:
+                    category_bars, severity_cells, key_insight, chain_section, finding_cards,
+                    inconclusive_card="", inconclusive_section="") -> str:
     """The window-scoped report body (everything between the header tabs and the
     global framework-coverage section). Extracted so an empty window can swap in a
     clean 'no data' body instead of a misleading 0%/A+ scorecard."""
@@ -1018,6 +1098,7 @@ def gen_report_body(stats, scorecard, data_quality_banner, target_boxes, defense
       <div class="stat-value">{stats['blocked']}</div>
       <div class="stat-detail">Defenses held</div>
     </div>
+{inconclusive_card}
     <div class="stat-card warning">
       <div class="stat-label">Success Rate</div>
       <div class="stat-value">{stats['success_rate']}%</div>
@@ -1073,7 +1154,8 @@ def gen_report_body(stats, scorecard, data_quality_banner, target_boxes, defense
   <div class="section-title animate delay-5">SUCCESSFUL ATTACKS &#8212; DETAILED FINDINGS</div>
   <div class="findings animate delay-5">
 {finding_cards}
-  </div>'''
+  </div>
+{inconclusive_section}'''
 
 
 def gen_empty_window_body(window_label: str) -> str:
@@ -1120,13 +1202,28 @@ def generate_html(stats: dict, results: list[dict], active_window: str = "all",
         report_body = gen_empty_window_body(window_label)
         chain_css = ""
     else:
+        errored = stats.get("errored", 0)
         category_bars = gen_category_bars(stats["by_category"])
         severity_cells = gen_severity_cells(stats["by_severity"])
         key_insight = gen_key_insight(stats["by_severity"])
         target_boxes = gen_target_boxes(stats["by_target"])
-        finding_cards = gen_finding_cards(stats["findings"])
+        finding_cards = gen_finding_cards(stats["findings"], errored=errored)
         scorecard = gen_scorecard(stats)
         defense_section = gen_defense_section(stats)
+        inconclusive_section = gen_inconclusive_section(results)
+
+        # Inconclusive stat card — shown only when there are inconclusive results, so
+        # the summary reconciles (blocked + inconclusive = total) instead of leaving
+        # the reader wondering why "36 blocked" doesn't match a 37-attack run.
+        inconclusive_card = ""
+        if errored:
+            inconclusive_card = (
+                '    <div class="stat-card warning">\n'
+                '      <div class="stat-label">Inconclusive</div>\n'
+                f'      <div class="stat-value">{errored}</div>\n'
+                '      <div class="stat-detail">Errored / no response &#8212; excluded from rates</div>\n'
+                '    </div>'
+            )
 
         # Multi-turn chain processing
         chain_results = extract_chain_results(results)
@@ -1139,7 +1236,8 @@ def generate_html(stats: dict, results: list[dict], active_window: str = "all",
             target_boxes=target_boxes, defense_section=defense_section,
             category_bars=category_bars, severity_cells=severity_cells,
             key_insight=key_insight, chain_section=chain_section,
-            finding_cards=finding_cards,
+            finding_cards=finding_cards, inconclusive_card=inconclusive_card,
+            inconclusive_section=inconclusive_section,
         )
 
     return f'''<!DOCTYPE html>
@@ -1401,7 +1499,7 @@ body::before {{
   display: flex;
   align-items: flex-start;
   gap: 14px;
-  margin: 24px 0 0 0;
+  margin: 24px 0 36px 0;
   padding: 14px 18px;
   background: rgba(255, 165, 0, 0.06);
   border: 1px solid var(--orange);
@@ -1961,6 +2059,7 @@ body::before {{
 .tag.blocked {{ color: var(--green); border-color: var(--green-dim); background: #00ff8808; }}
 .tag.hit {{ color: var(--red); border-color: var(--red-dim); background: #ff224408; animation: pulseGlow 2s ease-in-out infinite; }}
 .tag.filtered {{ color: var(--yellow); border-color: var(--yellow-dim); background: #ffcc0008; }}
+.tag.inconclusive {{ color: var(--orange); border-color: var(--orange); background: rgba(255,136,0,0.06); }}
 
 .tag.sev-low {{ color: #88aacc; border-color: #88aacc44; }}
 .tag.sev-medium {{ color: var(--yellow); border-color: var(--yellow-dim); }}
@@ -2130,8 +2229,9 @@ const results = {table_data};
 const tbody = document.getElementById('logBody');
 if (tbody) results.forEach((r, i) => {{
   const row = document.createElement('tr');
-  const resultTag = r.success ? '<span class="tag hit">HIT</span>' : 
-                    r.filtered ? '<span class="tag filtered">FILTERED</span>' : 
+  const resultTag = r.err ? '<span class="tag inconclusive" title="Excluded from scoring">INCONCLUSIVE</span>' :
+                    r.success ? '<span class="tag hit">HIT</span>' :
+                    r.filtered ? '<span class="tag filtered">FILTERED</span>' :
                     '<span class="tag blocked">BLOCKED</span>';
   const sevTag = `<span class="tag sev-${{r.sev}}">${{r.sev.toUpperCase()}}</span>`;
   const targetColor = r.target.includes('nemo') ? '#2ec4b6' :

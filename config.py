@@ -41,6 +41,20 @@ BEDROCK_GUARDRAIL_ID = os.getenv("BEDROCK_GUARDRAIL_ID")
 BEDROCK_GUARDRAIL_VERSION = os.getenv("BEDROCK_GUARDRAIL_VERSION", "DRAFT")
 BEDROCK_GENERATOR_MODEL_ID = os.getenv("BEDROCK_GENERATOR_MODEL_ID", "us.meta.llama3-3-70b-instruct-v1:0")
 
+# ── Google Vertex AI / Gemini (target + optional generator) ──────────────────
+# Auth is Application Default Credentials (gcloud auth application-default login),
+# so there is no key in .env. Only project, location, and model IDs live here.
+GCP_PROJECT = os.getenv("GCP_PROJECT")
+GCP_LOCATION = os.getenv("GCP_LOCATION", "us-central1")
+# Base model under test for the `gemini` and `gemini-shield` targets. Keep this
+# IDENTICAL across both so the ONLY variable in the A/B is Prompt Shield.
+GEMINI_TARGET_MODEL = os.getenv("GEMINI_TARGET_MODEL", "gemini-2.5-flash")
+
+# ── Prompt Shield (in-process detection library, not a service) ──────────────
+# Filesystem path to your prompt-shield repo, prepended to sys.path so its
+# `detection` package imports without a global PYTHONPATH tweak.
+SHIELD_PATH = os.getenv("SHIELD_PATH")
+
 # ── NeMo Guardrails sidecar (optional target: bedrock-nemo) ──────────────────
 # NeMo Guardrails requires Python <3.14 and can't install in this project's 3.14
 # venv, so it runs as an isolated Python 3.11 sidecar (see nemo_sidecar/). The
@@ -85,6 +99,7 @@ _REQUIRED_ENV = {
     # the sidecar. From the main app's side the only hard requirement is the base
     # model id (the sidecar URL has a working default).
     "bedrock-nemo": ["BEDROCK_MODEL_ID"],
+    "gemini": ["GCP_PROJECT"],
 }
 
 

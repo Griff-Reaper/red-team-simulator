@@ -22,6 +22,8 @@ from config import (
     AZURE_OPENAI_API_VERSION,
     ANTHROPIC_API_KEY,
     AWS_REGION,
+    GCP_PROJECT,
+    GCP_LOCATION,
     MAX_RETRIES,
     REQUEST_TIMEOUT,
 )
@@ -66,3 +68,20 @@ def bedrock_client():
         region_name=AWS_REGION,
         config=Config(retries={"max_attempts": MAX_RETRIES, "mode": "standard"}),
     )
+
+
+def gemini_client():
+    """Google Gen AI client for Gemini-on-Vertex targets.
+
+    Authenticates with Application Default Credentials, so no key is read from
+    disk or committed. Imports google-genai lazily so the dependency is only
+    needed when a Gemini target is actually used.
+    """
+    try:
+        from google import genai
+    except ImportError as e:
+        raise RuntimeError(
+            "Gemini target requires the Google Gen AI SDK. "
+            "Install it with: pip install google-genai"
+        ) from e
+    return genai.Client(vertexai=True, project=GCP_PROJECT, location=GCP_LOCATION)
